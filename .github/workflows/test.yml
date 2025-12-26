@@ -1,0 +1,12 @@
+name: Test My Action
+on: [push]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run my custom action
+        uses: Susenthiran28/custom-github-action@master
+        with:
+          vigilnzApiKey: "Hello from workflow"
