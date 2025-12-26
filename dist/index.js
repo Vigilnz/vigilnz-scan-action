@@ -27824,14 +27824,32 @@ function runScan() {
             scanTypesInList = scanTypes?.split(",")?.flatMap((type) => type.trim());
         }
 
-        action.info(`The Info message token : ${apiKey}`)
-        action.info(`The Info message repoUrl : ${repoUrl}`)
-        action.info(`The Info message types : ${scanTypesInList}`)
+        apiAuthenticate(apiKey);
+
+        // action.info(`The Info message token : ${apiKey}`)
+        action.info(`Github Repo url : ${repoUrl}`)
+        action.info(`Scan types : ${scanTypesInList}`)
 
 
     } catch (err) {
         console.log("Error: ", err)
         action.setFailed(`Scan failed: ${err.message}`);
+    }
+}
+
+async function apiAuthenticate(apiKey) {
+    try {
+        const request = {
+            apiKey: apiKey
+        }
+        const DEFAULT_URL = "https://api.vigilnz.com"
+        const ACCESS_TOKEN_URL = DEFAULT_URL + "/auth/api-key"
+        const SCAN_URL = DEFAULT_URL + "/scan-targets/multi-scan"
+
+        const response = await fetch(ACCESS_TOKEN_URL, { body: request, method: "POST" })
+        console.log("reponse------", response)
+    } catch (error) {
+        console.log("error--error----", error)
     }
 }
 
