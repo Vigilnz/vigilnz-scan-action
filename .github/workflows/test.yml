@@ -10,3 +10,4 @@ jobs:
         uses: Susenthiran28/custom-github-action@master
         with:
           vigilnzApiKey: "Hello from workflow"
+          scanTypes: "sca,sbom.sast"
