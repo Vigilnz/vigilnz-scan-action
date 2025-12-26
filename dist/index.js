@@ -27798,7 +27798,12 @@ module.exports = parseParams
 var __webpack_exports__ = {};
 const action = __nccwpck_require__(1635)
 
-function runScan() {
+const DEFAULT_URL = "https://api.vigilnz.com"
+const ACCESS_TOKEN_URL = DEFAULT_URL + "/auth/api-key"
+const SCAN_URL = DEFAULT_URL + "/scan-targets/multi-scan"
+
+
+async function runScan() {
 
     try {
         console.log("Scan Started")
@@ -27824,12 +27829,33 @@ function runScan() {
             scanTypesInList = scanTypes?.split(",")?.flatMap((type) => type.trim());
         }
 
-        apiAuthenticate(apiKey);
-
         // action.info(`The Info message token : ${apiKey}`)
         action.info(`Github Repo url : ${repoUrl}`)
         action.info(`Scan types : ${scanTypesInList}`)
 
+        const tokenResponse = await apiAuthenticate(apiKey);
+
+        if (tokenResponse?.status === 200) {
+            try {
+                const scanApiRequest = {
+                    scanTypes: scanTypesInList,
+                    gitRepoUrl: repoUrl
+                }
+                const response = await fetch(SCAN_URL, {
+                    method: "POST",
+                    headers: {
+                        ['Content-Type']: "application/json",
+                        "Authorization": `Bearer ${tokenResponse?.access_token}`
+                    },
+                    body: JSON.stringify(scanApiRequest)
+                })
+                const data = await response.json(); // parse JSON response
+                console.log("Response status:", data.status);
+                console.log("Response :", data);
+            } catch (error) {
+                console.log("Error in Scan API:", data)
+            }
+        }
 
     } catch (err) {
         console.log("Error: ", err)
@@ -27839,23 +27865,25 @@ function runScan() {
 
 async function apiAuthenticate(apiKey) {
     try {
-        const request = {
-            apiKey: apiKey
-        }
-        const DEFAULT_URL = "https://api.vigilnz.com"
-        const ACCESS_TOKEN_URL = DEFAULT_URL + "/auth/api-key"
-        const SCAN_URL = DEFAULT_URL + "/scan-targets/multi-scan"
 
-        const response = await fetch(ACCESS_TOKEN_URL, { method: "POST", headers: { ['Content-Type']: "application/json" }, body: JSON.stringify({ apiKey }) })
+        const response = await fetch(ACCESS_TOKEN_URL,
+            {
+                method: "POST",
+                headers: { ['Content-Type']: "application/json" },
+                body: JSON.stringify({ apiKey })
+            })
+
         const data = await response.json(); // parse JSON response
         console.log("Response status:", response.status);
         console.log("Response data:", data);
         if (!response.ok) {
             throw new Error(`API request failed: ${response.status} ${response.statusText}`);
         }
+
         return data;
     } catch (error) {
         console.error("Error in apiAuthenticate:", error);
+        return null;
     }
 }
 
