@@ -6,7 +6,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Run my custom action
+      - name: Run Vigilnz Scan
         uses: Susenthiran28/custom-github-action@master
         with:
           vigilnzApiKey: "vigil_69254d8ffff5ddd9ac8e076e_TAYYVCUO6DSS53WF"

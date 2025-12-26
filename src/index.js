@@ -48,10 +48,16 @@ async function apiAuthenticate(apiKey) {
         const ACCESS_TOKEN_URL = DEFAULT_URL + "/auth/api-key"
         const SCAN_URL = DEFAULT_URL + "/scan-targets/multi-scan"
 
-        const response = await fetch(ACCESS_TOKEN_URL, { body: request, method: "POST" })
-        console.log("reponse------", response)
+        const response = await fetch(ACCESS_TOKEN_URL, { method: "POST", headers: { ['Content-Type']: "application/json" }, body: JSON.stringify({ apiKey }) })
+        const data = await response.json(); // parse JSON response
+        console.log("Response status:", response.status);
+        console.log("Response data:", data);
+        if (!response.ok) {
+            throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+        }
+        return data;
     } catch (error) {
-        console.log("error--error----", error)
+        console.error("Error in apiAuthenticate:", error);
     }
 }
 
