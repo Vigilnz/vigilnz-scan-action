@@ -1,0 +1,20 @@
+name: 'Vigilnz Security Scan'
+description: 'Run Vigilnz Security scans (SCA, SBOM, SAST) in GitHub Actions'
+author: 'Vigilnz'
+inputs:
+  token:
+    description: 'Vigilnz API token'
+    required: true
+  scanTypes:
+    description: 'Comma-separated list of scans (sca,sbom,sast)'
+    required: true
+  # targetFile:
+  #   description: 'File or path to scan'
+  #   required: false
+runs:
+  using: 'node16'
+  main: 'src/index.js'
+
+# branding:
+#   icon: 'shield'
+#   color: 'blue'
