@@ -53,8 +53,9 @@ async function runScan(apiKey, scanTypesInList, repoUrl) {
     const tokenResponse = await apiAuthenticate(apiKey);
 
     if (tokenResponse?.status !== 200 || !tokenResponse.access_token) {
-        action.setFailed(`Scan failed`);
-        throw new Error("No valid access token received from Vigilnz API");
+        console.log("Error: ", tokenResponse)
+        action.setFailed(`Scan failed: No valid access token received from Vigilnz API`);
+        return
     }
 
     const scanApiRequest = {
@@ -74,8 +75,8 @@ async function runScan(apiKey, scanTypesInList, repoUrl) {
         const data = await response.json(); // parse JSON response
 
         if (!response.ok) {
-            action.setFailed(`Scan failed`);
-            throw new Error(`Scan failed (${response.status}): ${data.message || response.statusText}`);
+            action.setFailed(`Scan failed (${response.status}): ${data.message || response.statusText}`);
+            return
         }
         console.log("Scan API Response :", data);
         console.log("Scan Completed Successfully");
@@ -83,8 +84,8 @@ async function runScan(apiKey, scanTypesInList, repoUrl) {
         // console.log("Scan API Response :", data);
     } catch (error) {
         action.setFailed(`Scan failed`);
-        console.log("Error in Scan API:", data)
-        throw new Error(`Scan failed`);
+        console.log("Error in Scan API:", error)
+        return
     }
 }
 
