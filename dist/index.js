@@ -27834,7 +27834,6 @@ async function runScan() {
         action.info(`Scan types : ${scanTypesInList}`)
 
         const tokenResponse = await apiAuthenticate(apiKey);
-
         if (tokenResponse?.status === 200) {
             try {
                 const scanApiRequest = {
@@ -27880,7 +27879,7 @@ async function apiAuthenticate(apiKey) {
             throw new Error(`API request failed: ${response.status} ${response.statusText}`);
         }
 
-        return data;
+        return { ...data, status: response?.status };
     } catch (error) {
         console.error("Error in apiAuthenticate:", error);
         return null;
