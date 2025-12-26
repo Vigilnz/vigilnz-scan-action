@@ -2,7 +2,7 @@ name: 'Vigilnz Security Scan'
 description: 'Run Vigilnz Security scans (SCA, SBOM, SAST) in GitHub Actions'
 author: 'Vigilnz'
 inputs:
-  token:
+  vigilnzApiKey:
     description: 'Vigilnz API token'
     required: true
   scanTypes:

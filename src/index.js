@@ -13,10 +13,12 @@ function runScan() {
 
         if (!apiKey) {
             action.setFailed(`Vigilnz API Key is Required`);
+            return
         }
 
         if (!scanTypes) {
             action.setFailed(`Scan Types not mentioned`);
+            return
         }
 
         let scanTypesInList = []
@@ -24,9 +26,10 @@ function runScan() {
             scanTypesInList = scanTypes?.split(",")?.flatMap((type) => type.trim());
         }
 
-        action.info("The Info message token : ", apiKey)
-        action.info("The Info message repoUrl : ", repoUrl)
-        action.info("The Info message types : ", scanTypesInList)
+        action.info(`The Info message token : ${apiKey}`)
+        action.info(`The Info message repoUrl : ${repoUrl}`)
+        action.info(`The Info message types : ${scanTypesInList}`)
+
 
     } catch (err) {
         console.log("Error: ", err)
