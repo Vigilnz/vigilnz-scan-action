@@ -27826,7 +27826,14 @@ async function runScan() {
 
         let scanTypesInList = []
         if (scanTypes?.trim() !== "") {
-            scanTypesInList = scanTypes?.split(",")?.flatMap((type) => type.trim());
+            scanTypesInList = scanTypes?.split(",")?.flatMap((type) => {
+                if (type === "sca") {
+                    return "cve"
+                } else {
+                    return type?.trim()
+                }
+            }
+            );
         }
 
         // action.info(`The Info message token : ${apiKey}`)
