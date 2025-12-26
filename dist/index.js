@@ -27838,7 +27838,8 @@ async function runScan() {
             try {
                 const scanApiRequest = {
                     scanTypes: scanTypesInList,
-                    gitRepoUrl: repoUrl
+                    // gitRepoUrl: repoUrl
+                    gitRepoUrl: "https://github.com/Susenthiran28/nextjs_project"
                 }
                 const response = await fetch(SCAN_URL, {
                     method: "POST",
@@ -27849,8 +27850,8 @@ async function runScan() {
                     body: JSON.stringify(scanApiRequest)
                 })
                 const data = await response.json(); // parse JSON response
-                console.log("Response status:", data.status);
-                console.log("Response :", data);
+                console.log("Scan API Response status:", data.status);
+                console.log("Scan API Response :", data);
             } catch (error) {
                 console.log("Error in Scan API:", data)
             }
@@ -27873,8 +27874,8 @@ async function apiAuthenticate(apiKey) {
             })
 
         const data = await response.json(); // parse JSON response
-        console.log("Response status:", response.status);
-        console.log("Response data:", data);
+        console.log("Access Token Response status:", response.status);
+        console.log("Access Token Response:", data);
         if (!response.ok) {
             throw new Error(`API request failed: ${response.status} ${response.statusText}`);
         }
