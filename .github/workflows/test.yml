@@ -1,5 +1,7 @@
 name: Vigilnz Scan
-on: [push]
+on: 
+  push: # runs on every push 
+  workflow_dispatch: # lets you run manually from the Actions tab
 
 jobs:
   Vigilnz_Scan:
