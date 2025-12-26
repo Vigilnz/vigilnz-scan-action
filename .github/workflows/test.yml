@@ -9,5 +9,5 @@ jobs:
       - name: Run my custom action
         uses: Susenthiran28/custom-github-action@master
         with:
-          vigilnzApiKey: "Hello from workflow"
+          vigilnzApiKey: "vigil_69254d8ffff5ddd9ac8e076e_TAYYVCUO6DSS53WF"
           scanTypes: "sca,sbom,sast"
