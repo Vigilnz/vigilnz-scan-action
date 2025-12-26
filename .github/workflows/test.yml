@@ -2,7 +2,7 @@ name: Vigilnz Scan
 on: [push]
 
 jobs:
-  Vigilnz Scan:
+  Vigilnz_Scan:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
