@@ -27803,7 +27803,7 @@ const ACCESS_TOKEN_URL = DEFAULT_URL + "/auth/api-key"
 const SCAN_URL = DEFAULT_URL + "/scan-targets/multi-scan"
 
 
-async function runScan() {
+async function runVigilnzScan() {
 
     try {
         console.log("Scan Started")
@@ -27832,41 +27832,57 @@ async function runScan() {
                 } else {
                     return type?.trim()
                 }
-            }
-            );
+            });
         }
 
         // action.info(`The Info message token : ${apiKey}`)
         action.info(`Github Repo url : ${repoUrl}`)
         action.info(`Scan types : ${scanTypesInList}`)
 
-        const tokenResponse = await apiAuthenticate(apiKey);
-        if (tokenResponse?.status === 200) {
-            try {
-                const scanApiRequest = {
-                    scanTypes: scanTypesInList,
-                    // gitRepoUrl: repoUrl
-                    gitRepoUrl: "https://github.com/Susenthiran28/nextjs_project"
-                }
-                const response = await fetch(SCAN_URL, {
-                    method: "POST",
-                    headers: {
-                        ['Content-Type']: "application/json",
-                        "Authorization": `Bearer ${tokenResponse?.access_token}`
-                    },
-                    body: JSON.stringify(scanApiRequest)
-                })
-                const data = await response.json(); // parse JSON response
-                console.log("Scan API Response status:", data.status);
-                console.log("Scan API Response :", data);
-            } catch (error) {
-                console.log("Error in Scan API:", data)
-            }
-        }
+        await runScan(apiKey, scanTypesInList, repoUrl)
 
     } catch (err) {
         console.log("Error: ", err)
         action.setFailed(`Scan failed: ${err.message}`);
+    }
+}
+
+async function runScan(apiKey, scanTypesInList, repoUrl) {
+    const tokenResponse = await apiAuthenticate(apiKey);
+
+    if (tokenResponse?.status !== 200 || !tokenResponse.access_token) {
+        action.setFailed(`Scan failed`);
+        throw new Error("No valid access token received from Vigilnz API");
+    }
+
+    const scanApiRequest = {
+        scanTypes: scanTypesInList,
+        gitRepoUrl: repoUrl
+    }
+
+    try {
+        const response = await fetch(SCAN_URL, {
+            method: "POST",
+            headers: {
+                ['Content-Type']: "application/json",
+                "Authorization": `Bearer ${tokenResponse?.access_token}`
+            },
+            body: JSON.stringify(scanApiRequest)
+        })
+        const data = await response.json(); // parse JSON response
+
+        if (!response.ok) {
+            action.setFailed(`Scan failed`);
+            throw new Error(`Scan failed (${response.status}): ${data.message || response.statusText}`);
+        }
+        console.log("Scan API Response :", data);
+        console.log("Scan Completed Successfully");
+        // console.log("Scan API Response status:", response.status);
+        // console.log("Scan API Response :", data);
+    } catch (error) {
+        action.setFailed(`Scan failed`);
+        console.log("Error in Scan API:", data)
+        throw new Error(`Scan failed`);
     }
 }
 
@@ -27882,20 +27898,22 @@ async function apiAuthenticate(apiKey) {
 
         const data = await response.json(); // parse JSON response
         console.log("Access Token Response status:", response.status);
-        console.log("Access Token Response:", data);
+
         if (!response.ok) {
+            action.setFailed(`Scan failed`);
             throw new Error(`API request failed: ${response.status} ${response.statusText}`);
         }
 
+        console.log("Access Token Fetched Successfully");
         return { ...data, status: response?.status };
     } catch (error) {
+        action.setFailed(`Scan failed`);
         console.error("Error in apiAuthenticate:", error);
         return null;
     }
 }
 
-console.log("Custom Github Action Created")
-runScan()
+runVigilnzScan()
 module.exports = __webpack_exports__;
 /******/ })()
 ;

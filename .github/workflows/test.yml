@@ -1,8 +1,8 @@
-name: Test My Action
+name: Vigilnz Scan
 on: [push]
 
 jobs:
-  test:
+  Vigilnz Scan:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
