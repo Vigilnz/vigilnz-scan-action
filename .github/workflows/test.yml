@@ -11,5 +11,6 @@ jobs:
       - name: Run Vigilnz Scan
         uses: Susenthiran28/custom-github-action@master
         with:
-          vigilnzApiKey: "vigil_69254d8ffff5ddd9ac8e076e_TAYYVCUO6DSS53WF"
+          # vigilnzApiKey: "vigil_69254d8ffff5ddd9ac8e076e_TAYYVCUO6DSS53WF"
+          vigilnzApiKey: "${{ secrets.VIGILNZ_API_KEY }}"
           scanTypes: "sca,sbom,sast"
