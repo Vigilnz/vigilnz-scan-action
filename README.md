@@ -1,8 +1,4 @@
-# Vigilnz GitHub Action
-
-![Vigilnz Logo](images/vigilnz.svg) 
-
----
+# <img src="images/vigilnz.svg" width="40" height="40" /> Vigilnz GitHub Action
 
 ## Overview
 The **Vigilnz Security Scan Action** helps developers automatically check their repositories for vulnerabilities during CI/CD.  
@@ -27,7 +23,7 @@ To use the Vigilnz Security Scan Action, follow these steps in order:
 
 ### To generate your Vigilnz API Key:
 
-1. Login to the [Vigilnz](https://vigilnz.com/) application.
+1. Login to the <a href="https://vigilnz.com/" target="_blank">Vigilnz</a> application.
 2. Navigate to **Settings → API Keys**.
 3. Click **Generate New Key** or **View API Key** (if it exists).
 4. Copy the API Key and store it securely.
