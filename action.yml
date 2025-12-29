@@ -15,6 +15,6 @@ runs:
   using: 'node16'
   main: 'dist/index.js'
 
-# branding:
-#   icon: 'shield'
-#   color: 'blue'
+branding:
+  icon: 'shield'
+  color: 'blue'
