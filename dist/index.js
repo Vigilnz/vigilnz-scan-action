@@ -27898,7 +27898,7 @@ async function apiAuthenticate(apiKey) {
             })
 
         const data = await response.json(); // parse JSON response
-        console.log("Access Token Response status: ", response.status);
+        console.log("Access Token Response status : ", response.status);
 
         if (!response.ok) {
             action.setFailed(`Scan failed`);
