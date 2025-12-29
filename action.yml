@@ -1,5 +1,5 @@
 name: 'Vigilnz Security Scan'
-description: 'Run Vigilnz Security scans (SCA, SBOM, SAST) in GitHub Actions'
+description: 'Check your applications for vulnerabilties using Vigilnz'
 author: 'Vigilnz'
 inputs:
   vigilnzApiKey:
