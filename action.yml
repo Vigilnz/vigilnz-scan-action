@@ -8,9 +8,12 @@ inputs:
   scanTypes:
     description: 'Comma-separated list of scans (sca,sbom,sast)'
     required: true
-  # targetFile:
-  #   description: 'File or path to scan'
-  #   required: false
+  projectName:
+    description: 'Project name for the scan'
+    required: false
+  environment:
+    description: 'Choose which environment the scan trigger'
+    required: false
 runs:
   using: 'node16'
   main: 'dist/index.js'

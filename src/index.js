@@ -1,8 +1,23 @@
 const action = require("@actions/core")
 
-const DEFAULT_URL = "https://api.vigilnz.com"
-const ACCESS_TOKEN_URL = DEFAULT_URL + "/auth/api-key"
-const SCAN_URL = DEFAULT_URL + "/scan-targets/multi-scan"
+const DEV_DEFAULT_URL = "https://devapi.vigilnz.com"
+const DEMO_DEFAULT_URL = "https://demoapi.vigilnz.com"
+const PROD_DEFAULT_URL = "https://api.vigilnz.com"
+
+function getBaseUrl(env) {
+    switch (env?.toLowerCase()) {
+        case "dev":
+        case "development":
+            return DEV_DEFAULT_URL;
+        case "prod":
+        case "production":
+            return PROD_DEFAULT_URL;
+        case "demo":
+            return DEMO_DEFAULT_URL;
+        default:
+            return DEV_DEFAULT_URL;
+    }
+}
 
 
 async function runVigilnzScan() {
@@ -11,10 +26,17 @@ async function runVigilnzScan() {
         console.log("Scan Started")
         const apiKey = action.getInput("vigilnzApiKey")
         const scanTypes = action.getInput("scanTypes")
+        const projectName = action.getInput("projectName")
+        const environment = action.getInput("environment")
 
         const repo = process.env.GITHUB_REPOSITORY; // e.g. SomeUser/their-project
         const serverUrl = process.env.GITHUB_SERVER_URL; // e.g. https://github.com 
         const repoUrl = `${serverUrl}/${repo}`;
+
+        const BASE_URL = getBaseUrl(environment);
+        const ACCESS_TOKEN_URL = BASE_URL + "/auth/api-key";
+        const SCAN_URL = BASE_URL + "/scan-targets/multi-scan";
+
 
         if (!apiKey) {
             action.setFailed(`Vigilnz API Key is Required`);
@@ -31,8 +53,12 @@ async function runVigilnzScan() {
             scanTypesInList = scanTypes?.split(",")?.flatMap((type) => {
                 if (type === "sca") {
                     return "cve"
+                } else if (type?.toLowerCase() === "secret scan") {
+                    return "secret"
+                } else if (type?.toLowerCase() === "iac scan") {
+                    return "iac"
                 } else {
-                    return type?.trim()
+                    return type?.trim()?.toLowerCase()
                 }
             });
         }
@@ -41,7 +67,13 @@ async function runVigilnzScan() {
         action.info(`Github Repo url : ${repoUrl}`)
         action.info(`Scan types : ${scanTypesInList}`)
 
-        await runScan(apiKey, scanTypesInList, repoUrl)
+        const scanApiRequest = {
+            scanTypes: scanTypesInList,
+            gitRepoUrl: repoUrl,
+            projectName: projectName || "",
+        }
+
+        await runScan(apiKey, scanApiRequest, ACCESS_TOKEN_URL, SCAN_URL)
 
     } catch (err) {
         console.log("Error: ", err)
@@ -49,18 +81,13 @@ async function runVigilnzScan() {
     }
 }
 
-async function runScan(apiKey, scanTypesInList, repoUrl) {
-    const tokenResponse = await apiAuthenticate(apiKey);
+async function runScan(apiKey, scanApiRequest, ACCESS_TOKEN_URL, SCAN_URL) {
+    const tokenResponse = await apiAuthenticate(apiKey, ACCESS_TOKEN_URL);
 
     if (tokenResponse?.status !== 200 || !tokenResponse.access_token) {
         console.log("Error: ", tokenResponse)
         action.setFailed(`Scan failed: No valid access token received from Vigilnz API`);
         return
-    }
-
-    const scanApiRequest = {
-        scanTypes: scanTypesInList,
-        gitRepoUrl: repoUrl
     }
 
     try {
@@ -89,7 +116,7 @@ async function runScan(apiKey, scanTypesInList, repoUrl) {
     }
 }
 
-async function apiAuthenticate(apiKey) {
+async function apiAuthenticate(apiKey, ACCESS_TOKEN_URL) {
     try {
 
         const response = await fetch(ACCESS_TOKEN_URL,
