@@ -6,6 +6,9 @@ It supports multiple scan types:
 - **SCA** → Software Composition Analysis  
 - **SBOM** → Software Bill of Materials generation  
 - **SAST** → Static Application Security Testing  
+- **IAC SCAN** → Infrastructure as Code — checks configuration files (Terraform, Kubernetes, etc.) for misconfigurations.
+- **SECRET SCAN** → Secret Detection — finds hardcoded credentials, API keys, and sensitive information in source code.
+
 
 This action makes it easy to integrate Vigilnz scanning into your GitHub workflows.
 
@@ -60,7 +63,7 @@ jobs:
         uses: vigilnz/vigilnz-scan-action@v1
         with:
           vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
-          scanTypes: "sca,sbom,sast"
+          scanTypes: "SCA,SBOM,SAST,SECRET SCAN,IAC SCAN"
 
 ```
 
@@ -69,7 +72,7 @@ jobs:
 | Name          | Required | Description                                                |
 |---------------|----------|------------------------------------------------------------|
 | vigilnzApiKey | True     | Your Vigilnz API key (stored securely in GitHub Secrets).  |
-| scanTypes     | True     | Comma-separated list: `sca,sast,sbom`                      |
+| scanTypes     | True     | Comma-separated list: `SCA,SBOM,SAST,SECRET SCAN,IAC SCAN` |
 
 
 ## Example Scenarios
@@ -79,7 +82,7 @@ jobs:
 ```yaml
 with:
   vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
-  scanTypes: "sca"
+  scanTypes: "SCA"
 ```
 
 ### Run all scans:
@@ -87,6 +90,6 @@ with:
 ```yaml
 with:
   vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
-  scanTypes: "sca,sbom,sast"
+  scanTypes: "SCA,SBOM,SAST,SECRET SCAN,IAC SCAN"
 ```
 
