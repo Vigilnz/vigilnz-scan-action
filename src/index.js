@@ -51,7 +51,7 @@ async function runVigilnzScan() {
         let scanTypesInList = []
         if (scanTypes?.trim() !== "") {
             scanTypesInList = scanTypes?.split(",")?.flatMap((type) => {
-                if (type === "sca") {
+                if (type?.toLowerCase() === "sca") {
                     return "cve"
                 } else if (type?.toLowerCase() === "secret scan") {
                     return "secret"
