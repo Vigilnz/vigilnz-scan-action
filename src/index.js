@@ -35,14 +35,14 @@ async function runVigilnzScan() {
 
         // container scan fields  
         const containerCtx = {
-            containerImage: core.getInput('containerImage'),
-            containerProvider: core.getInput('containerProvider'),
-            containerRegistryType: core.getInput('containerRegistryType'),
-            containerRegistryUrl: core.getInput('containerRegistryUrl'),
-            containerAuthType: core.getInput('containerAuthType'),
-            containerToken: core.getInput('containerToken'),
-            containerUsername: core.getInput('containerUsername'),
-            containerPassword: core.getInput('containerPassword')
+            containerImage: action.getInput('containerImage'),
+            containerProvider: action.getInput('containerProvider'),
+            containerRegistryType: action.getInput('containerRegistryType'),
+            containerRegistryUrl: action.getInput('containerRegistryUrl'),
+            containerAuthType: action.getInput('containerAuthType'),
+            containerToken: action.getInput('containerToken'),
+            containerUsername: action.getInput('containerUsername'),
+            containerPassword: action.getInput('containerPassword')
         };
 
         const repo = process.env.GITHUB_REPOSITORY; // e.g. SomeUser/their-project
@@ -195,7 +195,7 @@ function validateInputs(scanTypes, dastScanType, dastTargetUrl, containerCtx) {
     // --- DAST validation ---
     if (scanTypes === "dast") {
         if (!dastScanType || !dastTargetUrl) {
-            core.setFailed(`DAST scan requires both 'dastScanType' and 'dastTargetUrl'`);
+            action.setFailed(`DAST scan requires both 'dastScanType' and 'dastTargetUrl'`);
             return false;
         } else {
             return {
@@ -220,7 +220,7 @@ function validateInputs(scanTypes, dastScanType, dastTargetUrl, containerCtx) {
         } = containerCtx;
 
         if (!containerImage || !containerProvider) {
-            core.setFailed(`Container scan requires both 'containerImage' and 'containerProvider'`);
+            action.setFailed(`Container scan requires both 'containerImage' and 'containerProvider'`);
             return false;
         }
 
@@ -237,7 +237,7 @@ function validateInputs(scanTypes, dastScanType, dastTargetUrl, containerCtx) {
             case "dockerhub":
                 if (containerAuthType === "username-password") {
                     if (!containerUsername || !containerPassword) {
-                        core.setFailed(`DockerHub private requires 'containerUsername' and 'containerPassword'`);
+                        action.setFailed(`DockerHub private requires 'containerUsername' and 'containerPassword'`);
                         return null;
                     } else {
                         containerInfo.credentials = {
@@ -250,7 +250,7 @@ function validateInputs(scanTypes, dastScanType, dastTargetUrl, containerCtx) {
 
             case "aws-ecr":
                 if (!containerRegistryType) {
-                    core.setFailed(`AWS ECR requires 'containerRegistryType' (ecr-public or ecr-private)`);
+                    action.setFailed(`AWS ECR requires 'containerRegistryType' (ecr-public or ecr-private)`);
                     return null;
                 } else {
                     containerInfo.registrySubType = containerRegistryType;
@@ -258,13 +258,13 @@ function validateInputs(scanTypes, dastScanType, dastTargetUrl, containerCtx) {
 
                 if (containerRegistryType === "ecr-private") {
                     if (!containerRegistryUrl) {
-                        core.setFailed(`AWS ECR private requires 'containerRegistryUrl'`);
+                        action.setFailed(`AWS ECR private requires 'containerRegistryUrl'`);
                         return null;
                     } else {
                         containerInfo.customRegistryUrl = containerRegistryUrl;
                     }
                     if (containerAuthType === "token" && !containerToken) {
-                        core.setFailed(`AWS ECR private with token requires 'containerToken'`);
+                        action.setFailed(`AWS ECR private with token requires 'containerToken'`);
                         return null;
                     } else {
                         containerInfo.credentials = {
@@ -277,7 +277,7 @@ function validateInputs(scanTypes, dastScanType, dastTargetUrl, containerCtx) {
             case "github":
             case "gitlab":
                 if (containerAuthType === "token" && !containerToken) {
-                    core.setFailed(`${containerProvider} private requires 'containerToken'`);
+                    action.setFailed(`${containerProvider} private requires 'containerToken'`);
                     return null;
                 } else {
                     containerInfo.credentials = {
@@ -288,19 +288,19 @@ function validateInputs(scanTypes, dastScanType, dastTargetUrl, containerCtx) {
 
             case "google":
                 if (!containerRegistryType) {
-                    core.setFailed(`Google requires 'containerRegistryType' (gcr or artifact-registry)`);
+                    action.setFailed(`Google requires 'containerRegistryType' (gcr or artifact-registry)`);
                     return null;
                 } else {
                     containerInfo.registrySubType = containerRegistryType
                 }
                 if (containerRegistryType === "artifact-registry" && !containerRegistryUrl) {
-                    core.setFailed(`Google Artifact Registry requires 'containerRegistryUrl'`);
+                    action.setFailed(`Google Artifact Registry requires 'containerRegistryUrl'`);
                     return null;
                 } else {
                     containerInfo.customRegistryUrl = containerRegistryUrl
                 }
                 if (containerAuthType === "token" && !containerToken) {
-                    core.setFailed(`Google private requires 'containerToken'`);
+                    action.setFailed(`Google private requires 'containerToken'`);
                     return null;
                 } else {
                     containerInfo.credentials = {
@@ -311,20 +311,20 @@ function validateInputs(scanTypes, dastScanType, dastTargetUrl, containerCtx) {
 
             case "azure":
                 if (!containerRegistryType) {
-                    core.setFailed(`Azure requires 'containerRegistryType' (mcr or acr-private)`);
+                    action.setFailed(`Azure requires 'containerRegistryType' (mcr or acr-private)`);
                     return null;
                 } else {
                     containerInfo.registrySubType = containerRegistryType
                 }
                 if (containerRegistryType === "acr-private") {
                     if (!containerRegistryUrl) {
-                        core.setFailed(`Azure ACR private requires 'containerRegistryUrl'`);
+                        action.setFailed(`Azure ACR private requires 'containerRegistryUrl'`);
                         return null;
                     } else {
                         containerInfo.customRegistryUrl = containerRegistryUrl
                     }
                     if (containerAuthType === "token" && !containerToken) {
-                        core.setFailed(`Azure ACR private with token requires 'containerToken'`);
+                        action.setFailed(`Azure ACR private with token requires 'containerToken'`);
                         return null;
                     } else {
                         containerInfo.credentials = {
@@ -333,7 +333,7 @@ function validateInputs(scanTypes, dastScanType, dastTargetUrl, containerCtx) {
                     }
                     if (containerAuthType === "username-password") {
                         if (!containerUsername || !containerPassword) {
-                            core.setFailed(`Azure ACR private with username-password requires both 'containerUsername' and 'containerPassword'`);
+                            action.setFailed(`Azure ACR private with username-password requires both 'containerUsername' and 'containerPassword'`);
                             return null;
                         } else {
                             containerInfo.credentials = {
@@ -347,7 +347,7 @@ function validateInputs(scanTypes, dastScanType, dastTargetUrl, containerCtx) {
 
             case "quay":
                 if (containerAuthType === "token" && !containerToken) {
-                    core.setFailed(`Quay private with token requires 'containerToken'`);
+                    action.setFailed(`Quay private with token requires 'containerToken'`);
                     return null;
                 } else {
                     containerInfo.credentials = {
@@ -356,7 +356,7 @@ function validateInputs(scanTypes, dastScanType, dastTargetUrl, containerCtx) {
                 }
                 if (containerAuthType === "username-password") {
                     if (!containerUsername || !containerPassword) {
-                        core.setFailed(`Quay private with username-password requires both 'containerUsername' and 'containerPassword'`);
+                        action.setFailed(`Quay private with username-password requires both 'containerUsername' and 'containerPassword'`);
                         return null;
                     } else {
                         containerInfo.credentials = {
@@ -368,7 +368,7 @@ function validateInputs(scanTypes, dastScanType, dastTargetUrl, containerCtx) {
                 return containerInfo;
 
             default:
-                core.setFailed(`Unsupported containerProvider: ${containerProvider}`);
+                action.setFailed(`Unsupported containerProvider: ${containerProvider}`);
                 return null;
         }
     }
