@@ -1,0 +1,14 @@
+---
+alwaysApply: true
+---
+# Project Instructions
+
+* Follow OWASP: validate inputs (core.getInput), sanitize outputs, and secure secrets via GitHub secrets.
+* write async, memory‑efficient code; avoid blocking I/O; stream large data.
+* Use modern idioms; keep code modular and maintainable
+* Documentation: update README with usage and examples.
+* Unit test critical logic; ≥80% coverage; mock APIs
+* use try/catch around API calls; structured logs with core.info/core.error; never log sensitive data.
+* Write meaningful, focused commits; never commit secrets
+* do not create document every time, create only when asked
+* For every new feature, scan the Action codebase to identify how similar features are organized, then generate the corresponding modules, inputs in action.yml, helper functions, and tests. Place files in the correct folders and maintain the project’s established naming conventions and architecture.

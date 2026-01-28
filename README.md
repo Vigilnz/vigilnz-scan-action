@@ -1,13 +1,15 @@
 # <img src="images/vigilnz.svg" width="40" height="40" align="absmiddle" /> Vigilnz GitHub Action
 
 ## Overview
-The **Vigilnz Security Scan Action** helps developers automatically check their repositories for vulnerabilities during CI/CD.  
+The **Vigilnz Security Scan Action** helps developers automatically check their applications and repositories for vulnerabilities during CI/CD.  
 It supports multiple scan types:
 - **SCA** → Software Composition Analysis  
 - **SBOM** → Software Bill of Materials generation  
 - **SAST** → Static Application Security Testing  
 - **IAC SCAN** → Infrastructure as Code — checks configuration files (Terraform, Kubernetes, etc.) for misconfigurations.
 - **SECRET SCAN** → Secret Detection — finds hardcoded credentials, API keys, and sensitive information in source code.
+- **DAST** → Dynamic Application Security Testing — tests running web applications for security vulnerabilities.
+- **CONTAINER SCAN** → Container Image Scanning — analyzes container images for vulnerabilities and misconfigurations.
 
 
 This action makes it easy to integrate Vigilnz scanning into your GitHub workflows.
@@ -64,15 +66,46 @@ jobs:
         with:
           vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
           scanTypes: "SCA,SBOM,SAST,SECRET SCAN,IAC SCAN"
+          projectName: "my-project"
+          environment: "production"
 
 ```
 
 ## Inputs
 
+### Required Inputs
+
 | Name          | Required | Description                                                |
 |---------------|----------|------------------------------------------------------------|
 | vigilnzApiKey | True     | Your Vigilnz API key (stored securely in GitHub Secrets).  |
-| scanTypes     | True     | Comma-separated list: `SCA,SBOM,SAST,SECRET SCAN,IAC SCAN` |
+| scanTypes     | True     | Comma-separated list: `SCA,SBOM,SAST,SECRET SCAN,IAC SCAN,DAST,CONTAINER SCAN` |
+
+### Optional Inputs
+
+| Name                | Required | Description                                                                    |
+|---------------------|----------|--------------------------------------------------------------------------------|
+| projectName          | False    | Project name for the scan                                                      |
+| environment         | False    | Environment for the scan (`dev`, `development`, `demo`, `prod`, `production`)  |
+
+### DAST Scan Inputs
+
+| Name          | Required | Description                                    | Required When            |
+|---------------|----------|------------------------------------------------|--------------------------|
+| dastScanType  | False    | DAST scan type (e.g., `spider`, `active`)      | When `DAST` in scanTypes |
+| dastTargetUrl | False    | Target URL for DAST scan                       | When `DAST` in scanTypes |
+
+### Container Scan Inputs
+
+| Name                  | Required | Description                                                                      | Required When                    |
+|-----------------------|----------|----------------------------------------------------------------------------------|----------------------------------|
+| containerImage        | False    | Container image name (e.g., `nginx:latest`)                                      | When `CONTAINER SCAN` in scanTypes |
+| containerProvider     | False    | Registry provider: `dockerhub`, `aws-ecr`, `github`, `gitlab`, `google`, `azure`, `quay` | When `CONTAINER SCAN` in scanTypes |
+| containerRegistryType | False    | Registry type: `public`, `private`, `ecr-public`, `ecr-private`, `gcr`, `artifact`, `mcr` | When required by provider |
+| containerRegistryUrl  | False    | Registry URL (for private registries)                                           | When using private registries    |
+| containerAuthType     | False    | Authentication type: `none`, `token`, `username-password`                       | When registry requires auth      |
+| containerToken        | False    | Access token for container registry                                              | When `containerAuthType` is `token` |
+| containerUsername     | False    | Username for container registry                                                  | When `containerAuthType` is `username-password` |
+| containerPassword     | False    | Password for container registry (store in secrets!)                               | When `containerAuthType` is `username-password` |
 
 
 ## Example Scenarios
@@ -85,11 +118,117 @@ with:
   scanTypes: "SCA"
 ```
 
-### Run all scans:
+### Run all code-based scans:
 
 ```yaml
 with:
   vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
   scanTypes: "SCA,SBOM,SAST,SECRET SCAN,IAC SCAN"
+  projectName: "my-application"
+  environment: "production"
 ```
 
+### Run DAST scan:
+
+```yaml
+with:
+  vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
+  scanTypes: "DAST"
+  dastScanType: "active"
+  dastTargetUrl: "https://example.com"
+  projectName: "web-application"
+```
+
+### Run Container scan (Docker Hub public image):
+
+```yaml
+with:
+  vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
+  scanTypes: "CONTAINER SCAN"
+  containerImage: "nginx:latest"
+  containerProvider: "dockerhub"
+  containerAuthType: "none"
+```
+
+### Run Container scan (Docker Hub private image):
+
+```yaml
+with:
+  vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
+  scanTypes: "CONTAINER SCAN"
+  containerImage: "myorg/myapp:1.0.0"
+  containerProvider: "dockerhub"
+  containerAuthType: "username-password"
+  containerUsername: ${{ secrets.DOCKERHUB_USERNAME }}
+  containerPassword: ${{ secrets.DOCKERHUB_PASSWORD }}
+```
+
+### Run Container scan (AWS ECR private):
+
+```yaml
+with:
+  vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
+  scanTypes: "CONTAINER SCAN"
+  containerImage: "myapp:latest"
+  containerProvider: "aws-ecr"
+  containerRegistryType: "ecr-private"
+  containerRegistryUrl: "123456789012.dkr.ecr.us-east-1.amazonaws.com"
+  containerAuthType: "token"
+  containerToken: ${{ secrets.AWS_ECR_TOKEN }}
+```
+
+### Run Container scan (GitHub Container Registry):
+
+```yaml
+with:
+  vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
+  scanTypes: "CONTAINER SCAN"
+  containerImage: "ghcr.io/myorg/myapp:latest"
+  containerProvider: "github"
+  containerAuthType: "token"
+  containerToken: ${{ secrets.GITHUB_TOKEN }}
+```
+
+### Run Container scan (Google Container Registry):
+
+```yaml
+with:
+  vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
+  scanTypes: "CONTAINER SCAN"
+  containerImage: "gcr.io/myproject/myapp:latest"
+  containerProvider: "google"
+  containerRegistryType: "gcr"
+  containerAuthType: "token"
+  containerToken: ${{ secrets.GCP_TOKEN }}
+```
+
+### Run Container scan (Azure Container Registry):
+
+```yaml
+with:
+  vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
+  scanTypes: "CONTAINER SCAN"
+  containerImage: "myapp:latest"
+  containerProvider: "azure"
+  containerRegistryType: "acr-private"
+  containerRegistryUrl: "myregistry.azurecr.io"
+  containerAuthType: "token"
+  containerToken: ${{ secrets.AZURE_ACR_TOKEN }}
+```
+
+### Run multiple scan types together:
+
+```yaml
+with:
+  vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
+  scanTypes: "SCA,SAST,DAST,CONTAINER SCAN"
+  projectName: "full-stack-app"
+  environment: "production"
+  # DAST configuration
+  dastScanType: "active"
+  dastTargetUrl: "https://myapp.example.com"
+  # Container configuration
+  containerImage: "myapp:latest"
+  containerProvider: "dockerhub"
+  containerAuthType: "none"
+```

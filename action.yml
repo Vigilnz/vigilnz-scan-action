@@ -13,7 +13,42 @@ inputs:
     required: false
   environment:
     description: 'Choose which environment the scan trigger'
+    required: false 
+
+  # DAST fields
+  dastScanType:
+    description: 'DAST scan type (e.g., spider, active)'
     required: false
+  dastTargetUrl:
+    description: 'Target URL for DAST scan'
+    required: false
+
+  # Container fields
+  containerImage:
+    description: 'Container image name (e.g., nginx:latest)'
+    required: false
+  containerProvider:
+    description: 'Registry provider (dockerhub, aws-ecr, github, gitlab, google, azure, quay)'
+    required: false
+  containerRegistryType:
+    description: 'Registry type (public, private, ecr-public, ecr-private, gcr, artifact, mcr)'
+    required: false
+  containerRegistryUrl:
+    description: 'Registry URL (for private registries)'
+    required: false
+  containerAuthType:
+    description: 'Authentication type (none, token, username-password)'
+    required: false
+  containerToken:
+    description: 'Access token for container registry'
+    required: false
+  containerUsername:
+    description: 'Username for container registry'
+    required: false
+  containerPassword:
+    description: 'Password for container registry'
+    required: false
+
 runs:
   using: 'node16'
   main: 'dist/index.js'
