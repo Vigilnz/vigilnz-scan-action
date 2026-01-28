@@ -71,13 +71,6 @@ async function runVigilnzScan() {
             }
         }
 
-        if (scanTypes?.split(",").some(s => s.toLocaleLowerCase() === "container scan" || s.toLocaleLowerCase() === "container")) {
-            if (!containerImage || !containerProvider) {
-                action.setFailed(`Container scan requires both 'containerImage' and 'containerProvider'`);
-                return
-            }
-        }
-
         if (!scanTypes) {
             action.setFailed(`Scan Types not mentioned`);
             return
