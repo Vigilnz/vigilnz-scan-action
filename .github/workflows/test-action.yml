@@ -40,7 +40,7 @@ on:
 jobs:
   verify-build:
     name: Verify dist matches src
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-set
     steps:
       - uses: actions/checkout@v4
 
@@ -75,7 +75,7 @@ jobs:
 
   scan:
     name: Run scan
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-set
     if: github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
