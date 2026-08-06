@@ -133,6 +133,18 @@ function evaluateGates(config, { outcomes, totals }) {
   }
 
   if (config.failOnSeverity) {
+    // Fail closed: unread summaries would look identical to "zero findings", so a gate
+    // must never pass on counts it could not actually read.
+    const unreadable = outcomes.filter((outcome) => outcome.isSummaryAvailable === false);
+    if (unreadable.length > 0) {
+      action.setFailed(
+        `Severity gate cannot be evaluated: findings summary unavailable for ` +
+          `${unreadable.map((outcome) => outcome.scanType).join(", ")}. ` +
+          "Refusing to pass the gate on unread results."
+      );
+      return aggregateStatus;
+    }
+
     const breaching = countAtOrAboveSeverity(totals, config.failOnSeverity);
     if (breaching > 0) {
       action.setFailed(

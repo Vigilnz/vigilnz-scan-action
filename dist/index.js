@@ -32193,6 +32193,18 @@ function evaluateGates(config, { outcomes, totals }) {
   }
 
   if (config.failOnSeverity) {
+    // Fail closed: unread summaries would look identical to "zero findings", so a gate
+    // must never pass on counts it could not actually read.
+    const unreadable = outcomes.filter((outcome) => outcome.isSummaryAvailable === false);
+    if (unreadable.length > 0) {
+      action.setFailed(
+        `Severity gate cannot be evaluated: findings summary unavailable for ` +
+          `${unreadable.map((outcome) => outcome.scanType).join(", ")}. ` +
+          "Refusing to pass the gate on unread results."
+      );
+      return aggregateStatus;
+    }
+
     const breaching = countAtOrAboveSeverity(totals, config.failOnSeverity);
     if (breaching > 0) {
       action.setFailed(
@@ -32902,26 +32914,29 @@ async function pollScanTarget(ctx, target) {
 }
 
 /**
- * Attach the severity summary to a completed scan. Summary-fetch failures degrade to
- * zero counts with a warning rather than failing the run outright.
+ * Attach the severity summary to a completed scan.
+ *
+ * A failed summary fetch yields zero counts, but sets `isSummaryAvailable: false` so the
+ * severity gate can fail closed instead of reading the zeros as "no findings".
  *
  * @param {{baseUrl: string, token: string}} ctx
  * @param {object} outcome - Result of pollScanTarget
- * @returns {Promise<object>} Outcome with a `summary` field
+ * @returns {Promise<object>} Outcome with `summary` and `isSummaryAvailable` fields
  */
 async function attachSummary(ctx, outcome) {
+  // Only completed scans have findings to read — absent counts are correct, not missing.
   if (outcome.status !== SCAN_STATUS.COMPLETE || !outcome.scanId) {
-    return { ...outcome, summary: { ...EMPTY_SUMMARY } };
+    return { ...outcome, summary: { ...EMPTY_SUMMARY }, isSummaryAvailable: true };
   }
 
   try {
     const summary = await fetchScanSummary(ctx.baseUrl, ctx.token, outcome.scanId);
-    return { ...outcome, summary };
+    return { ...outcome, summary, isSummaryAvailable: true };
   } catch (error) {
     action.warning(
       `Could not read findings summary for ${outcome.scanType} (${outcome.scanId}): ${error.message}`
     );
-    return { ...outcome, summary: { ...EMPTY_SUMMARY } };
+    return { ...outcome, summary: { ...EMPTY_SUMMARY }, isSummaryAvailable: false };
   }
 }
 
