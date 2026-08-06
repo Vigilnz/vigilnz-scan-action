@@ -87,6 +87,36 @@ jobs:
 | projectName          | False    | Project name for the scan                                                      |
 | environment         | False    | Environment for the scan (`dev`, `development`, `demo`, `prod`, `production`)  |
 
+### Wait & Gating Inputs
+
+By default the action **queues** the scans and finishes immediately — it does not wait for
+results. Set `waitForCompletion: true` to block the job until every scan finishes, read the
+findings back, and optionally fail the build on severity.
+
+| Name                | Required | Default | Description                                                                    |
+|---------------------|----------|---------|--------------------------------------------------------------------------------|
+| waitForCompletion   | False    | `false` | Block the job until every queued scan reaches a terminal state                 |
+| timeoutMinutes      | False    | `30`    | Maximum minutes to wait (clamped to 1–360)                                     |
+| pollIntervalSeconds | False    | `15`    | Seconds between status polls (clamped to 5–300)                                |
+| failOnSeverity      | False    | `none`  | Fail when findings exist at or above this severity: `critical`, `high`, `medium`, `low`, `none` |
+| failOnScanError     | False    | `true`  | Fail when a scan errors or times out (only applies when waiting)               |
+
+### Outputs
+
+Outputs are always set. Severity counts are `0` unless `waitForCompletion: true`.
+
+| Name           | Description                                                             |
+|----------------|-------------------------------------------------------------------------|
+| scanTargetIds  | Comma-separated scan target IDs created by this run                     |
+| scanStatus     | `pending` (queue-only), `complete`, `error` or `timed_out`              |
+| repoUrl        | Repository URL that was scanned                                          |
+| criticalCount  | Total critical findings across all scans                                 |
+| highCount      | Total high findings across all scans                                     |
+| mediumCount    | Total medium findings across all scans                                   |
+| lowCount       | Total low findings across all scans                                      |
+| totalFindings  | Total findings across all scans                                          |
+| resultsJson    | JSON array of per-scan outcomes with status and severity summary         |
+
 ### DAST Scan Inputs
 
 | Name          | Required | Description                                    | Required When            |
@@ -109,6 +139,40 @@ jobs:
 
 
 ## Example Scenarios
+
+### Block the PR until scans finish, and fail on high/critical:
+
+```yaml
+- name: Vigilnz Security Scan
+  id: vigilnz
+  uses: vigilnz/vigilnz-scan-action@v1
+  with:
+    vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
+    scanTypes: "SCA,SAST,SECRET SCAN"
+    projectName: "my-application"
+    environment: "production"
+    waitForCompletion: true
+    timeoutMinutes: 45
+    failOnSeverity: high
+
+- name: Report
+  if: always()
+  run: |
+    echo "Critical: ${{ steps.vigilnz.outputs.criticalCount }}"
+    echo "High:     ${{ steps.vigilnz.outputs.highCount }}"
+    echo "Total:    ${{ steps.vigilnz.outputs.totalFindings }}"
+```
+
+### Wait for results but never fail the build (report-only):
+
+```yaml
+with:
+  vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
+  scanTypes: "SCA,SAST"
+  waitForCompletion: true
+  failOnSeverity: none
+  failOnScanError: false
+```
 
 ### Run single scan:
 

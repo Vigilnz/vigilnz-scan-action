@@ -13,7 +13,29 @@ inputs:
     required: false
   environment:
     description: 'Choose which environment the scan trigger'
-    required: false 
+    required: false
+
+  # Wait / gating fields
+  waitForCompletion:
+    description: 'Block the job until every queued scan finishes (default false — queue and exit)'
+    required: false
+    default: 'false'
+  timeoutMinutes:
+    description: 'Maximum minutes to wait when waitForCompletion is true (1-360)'
+    required: false
+    default: '30'
+  pollIntervalSeconds:
+    description: 'Seconds between scan status polls (5-300)'
+    required: false
+    default: '15'
+  failOnSeverity:
+    description: 'Fail the job when findings at or above this severity exist (critical, high, medium, low, none). Requires waitForCompletion'
+    required: false
+    default: 'none'
+  failOnScanError:
+    description: 'Fail the job when a scan errors or times out. Requires waitForCompletion'
+    required: false
+    default: 'true'
 
   # DAST fields
   dastScanType:
@@ -49,8 +71,28 @@ inputs:
     description: 'Password for container registry'
     required: false
 
+outputs:
+  scanTargetIds:
+    description: 'Comma-separated scan target IDs created by this run'
+  scanStatus:
+    description: 'Aggregate status: pending (queue-only), complete, error or timed_out'
+  repoUrl:
+    description: 'Repository URL that was scanned'
+  criticalCount:
+    description: 'Total critical findings across all scans (0 unless waitForCompletion is true)'
+  highCount:
+    description: 'Total high findings across all scans (0 unless waitForCompletion is true)'
+  mediumCount:
+    description: 'Total medium findings across all scans (0 unless waitForCompletion is true)'
+  lowCount:
+    description: 'Total low findings across all scans (0 unless waitForCompletion is true)'
+  totalFindings:
+    description: 'Total findings across all scans (0 unless waitForCompletion is true)'
+  resultsJson:
+    description: 'JSON array of per-scan outcomes with status and severity summary'
+
 runs:
-  using: 'node16'
+  using: 'node20'
   main: 'dist/index.js'
 
 branding:

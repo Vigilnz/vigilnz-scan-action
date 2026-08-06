@@ -1,370 +1,221 @@
-const action = require("@actions/core")
+/**
+ * index.js
+ * Purpose: Entrypoint for the Vigilnz Security Scan GitHub Action — validates inputs,
+ *          queues the scans and (optionally) waits for completion, publishes outputs
+ *          and gates the job on finding severity.
+ * Author: Vigilnz
+ * Date: 2026-08-06
+ */
 
-const DEV_DEFAULT_URL = "https://devapi.vigilnz.com"
-const DEMO_DEFAULT_URL = "https://demoapi.vigilnz.com"
-const PROD_DEFAULT_URL = "https://api.vigilnz.com"
+"use strict";
 
-function getBaseUrl(env) {
-    switch (env?.toLowerCase()) {
-        case "dev":
-        case "development":
-            return DEV_DEFAULT_URL;
-        case "prod":
-        case "production":
-            return PROD_DEFAULT_URL;
-        case "demo":
-            return DEMO_DEFAULT_URL;
-        default:
-            return DEV_DEFAULT_URL;
-    }
+const action = require("@actions/core");
+
+const { SCAN_STATUS } = require("./constants");
+const { readInputs } = require("./inputs");
+const { buildDastContext, buildContainerContext } = require("./scan-context");
+const { authenticate, submitScan } = require("./api-client");
+const { waitForScans, countAtOrAboveSeverity, EMPTY_SUMMARY } = require("./wait-for-scans");
+const { setOutputs, writeJobSummary, logTotals } = require("./report");
+
+const SCAN_TYPE = Object.freeze({ DAST: "dast", CONTAINER: "container" });
+
+/**
+ * Resolve the repository URL of the workflow this action is running in.
+ *
+ * @returns {string}
+ */
+function resolveRepoUrl() {
+  const repo = process.env.GITHUB_REPOSITORY;
+  const serverUrl = process.env.GITHUB_SERVER_URL;
+  return `${serverUrl}/${repo}`;
 }
 
+/**
+ * Validate the inputs that are mandatory regardless of scan type.
+ *
+ * @param {object} config - Result of readInputs()
+ * @returns {boolean} False when the run has already been failed
+ */
+function hasValidRequiredInputs(config) {
+  if (!config.apiKey) {
+    action.setFailed("Vigilnz API Key is Required");
+    return false;
+  }
+  if (!config.scanTypes) {
+    action.setFailed("Scan Types not mentioned");
+    return false;
+  }
+  if (
+    config.scanTypesInList.includes(SCAN_TYPE.DAST) &&
+    (!config.dastScanType || !config.dastTargetUrl)
+  ) {
+    action.setFailed("DAST scan requires both 'dastTargetUrl' and 'dastScanType'");
+    return false;
+  }
+  return true;
+}
 
+/**
+ * Assemble the POST /scan-targets/multi-scan request body.
+ *
+ * @param {object} config
+ * @param {string} repoUrl
+ * @returns {object|null} Request body, or null when a scan context failed validation
+ */
+function buildScanRequest(config, repoUrl) {
+  const scanApiRequest = {
+    scanTypes: config.scanTypesInList,
+    gitRepoUrl: repoUrl,
+    projectName: config.projectName || "",
+  };
+
+  if (config.scanTypesInList.includes(SCAN_TYPE.DAST)) {
+    const dastContext = buildDastContext(config.dastScanType, config.dastTargetUrl);
+    if (!dastContext) return null;
+    scanApiRequest.scanContext = dastContext;
+  }
+
+  if (config.scanTypesInList.includes(SCAN_TYPE.CONTAINER)) {
+    const containerContext = buildContainerContext(config.containerCtx);
+    if (!containerContext) return null;
+    scanApiRequest.containerScanContext = containerContext;
+  }
+
+  return scanApiRequest;
+}
+
+/**
+ * Publish outputs for a queue-only run (waitForCompletion disabled).
+ *
+ * @param {Array<{scanTargetId: string, scanType: string}>} scanInfo
+ * @param {string} repoUrl
+ * @returns {void}
+ */
+function reportQueuedOnly(scanInfo, repoUrl) {
+  setOutputs({
+    scanTargetIds: scanInfo.map((entry) => entry.scanTargetId),
+    totals: { ...EMPTY_SUMMARY },
+    outcomes: scanInfo.map((entry) => ({ ...entry, status: SCAN_STATUS.PENDING })),
+    scanStatus: SCAN_STATUS.PENDING,
+    repoUrl,
+  });
+
+  action.info(
+    `Queued ${scanInfo.length} scan(s). Not waiting for results — ` +
+      "set 'waitForCompletion: true' to block until the scans finish."
+  );
+}
+
+/**
+ * Decide the job outcome from the scan outcomes and the configured severity gate.
+ *
+ * @param {object} config
+ * @param {{outcomes: object[], totals: object}} result
+ * @returns {string} Aggregate scan status
+ */
+function evaluateGates(config, { outcomes, totals }) {
+  const failedScans = outcomes.filter((outcome) => outcome.status !== SCAN_STATUS.COMPLETE);
+  const aggregateStatus = failedScans.length === 0 ? SCAN_STATUS.COMPLETE : failedScans[0].status;
+
+  logTotals(totals);
+
+  if (failedScans.length > 0) {
+    const detail = failedScans
+      .map((outcome) => `${outcome.scanType}: ${outcome.status} (${outcome.message})`)
+      .join("; ");
+
+    if (config.shouldFailOnScanError) {
+      action.setFailed(`${failedScans.length} scan(s) did not complete — ${detail}`);
+      return aggregateStatus;
+    }
+    action.warning(`${failedScans.length} scan(s) did not complete — ${detail}`);
+  }
+
+  if (config.failOnSeverity) {
+    const breaching = countAtOrAboveSeverity(totals, config.failOnSeverity);
+    if (breaching > 0) {
+      action.setFailed(
+        `Severity gate failed: ${breaching} finding(s) at or above ` +
+          `'${config.failOnSeverity}' severity.`
+      );
+    } else {
+      action.info(`Severity gate passed — no findings at or above '${config.failOnSeverity}'.`);
+    }
+  }
+
+  return aggregateStatus;
+}
+
+/**
+ * Queue the scans, then either return immediately or wait for results and gate the job.
+ *
+ * @param {object} config
+ * @param {object} scanApiRequest
+ * @param {string} repoUrl
+ * @returns {Promise<void>}
+ */
+async function runScan(config, scanApiRequest, repoUrl) {
+  const token = await authenticate(config.baseUrl, config.apiKey);
+  action.info("Access token fetched successfully.");
+
+  const data = await submitScan(config.baseUrl, token, scanApiRequest);
+  const scanInfo = Array.isArray(data?.scanInfo) ? data.scanInfo : [];
+
+  if (Array.isArray(data?.errors) && data.errors.length > 0) {
+    for (const err of data.errors) {
+      action.warning(`Backend could not queue ${err.scanType}: ${err.message}`);
+    }
+  }
+
+  if (scanInfo.length === 0) {
+    action.setFailed("Scan submitted but no scan targets were created.");
+    return;
+  }
+
+  action.info(`Scans queued: ${scanInfo.map((e) => e.scanType).join(", ")}`);
+
+  if (!config.shouldWaitForCompletion) {
+    reportQueuedOnly(scanInfo, repoUrl);
+    return;
+  }
+
+  const result = await waitForScans({ ...config, token }, scanInfo);
+  const scanStatus = evaluateGates(config, result);
+
+  setOutputs({
+    scanTargetIds: scanInfo.map((entry) => entry.scanTargetId),
+    totals: result.totals,
+    outcomes: result.outcomes,
+    scanStatus,
+    repoUrl,
+  });
+  await writeJobSummary({ outcomes: result.outcomes, totals: result.totals, repoUrl });
+}
+
+/**
+ * Action entrypoint.
+ *
+ * @returns {Promise<void>}
+ */
 async function runVigilnzScan() {
+  try {
+    const config = readInputs();
+    if (!hasValidRequiredInputs(config)) return;
 
-    try {
-        console.log("Scan Started")
-        const apiKey = action.getInput("vigilnzApiKey")
-        const scanTypes = action.getInput("scanTypes")
-        const projectName = action.getInput("projectName")
-        const environment = action.getInput("environment")
+    const repoUrl = resolveRepoUrl();
+    action.info(`GitHub repo url : ${repoUrl}`);
+    action.info(`Scan types : ${config.scanTypesInList.join(", ")}`);
 
-        // dast scan fields
-        const dastScanType = action.getInput("dastScanType")
-        const dastTargetUrl = action.getInput("dastTargetUrl")
+    const scanApiRequest = buildScanRequest(config, repoUrl);
+    if (!scanApiRequest) return;
 
-        // container scan fields  
-        const containerCtx = {
-            containerImage: action.getInput('containerImage'),
-            containerProvider: action.getInput('containerProvider'),
-            containerRegistryType: action.getInput('containerRegistryType'),
-            containerRegistryUrl: action.getInput('containerRegistryUrl'),
-            containerAuthType: action.getInput('containerAuthType'),
-            containerToken: action.getInput('containerToken'),
-            containerUsername: action.getInput('containerUsername'),
-            containerPassword: action.getInput('containerPassword')
-        };
-
-        const repo = process.env.GITHUB_REPOSITORY; // e.g. SomeUser/their-project
-        const serverUrl = process.env.GITHUB_SERVER_URL; // e.g. https://github.com 
-        const repoUrl = `${serverUrl}/${repo}`;
-
-        const BASE_URL = getBaseUrl(environment);
-        const ACCESS_TOKEN_URL = BASE_URL + "/auth/api-key";
-        const SCAN_URL = BASE_URL + "/scan-targets/multi-scan";
-
-
-        if (!apiKey) {
-            action.setFailed(`Vigilnz API Key is Required`);
-            return
-        }
-
-        if (!scanTypes) {
-            action.setFailed(`Scan Types not mentioned`);
-            return
-        }
-
-        if (scanTypes?.split(",").some(s => s.toLocaleLowerCase() === "dast")) {
-            if (!dastScanType || !dastTargetUrl) {
-                action.setFailed(`DAST scan requires both 'dastTargetUrl' and 'dastScanType'`);
-                return
-            }
-        }
-
-        if (!scanTypes) {
-            action.setFailed(`Scan Types not mentioned`);
-            return
-        }
-
-        let scanTypesInList = []
-        if (scanTypes?.trim() !== "") {
-            scanTypesInList = scanTypes?.split(",")?.flatMap((type) => {
-                if (type?.toLowerCase() === "sca") {
-                    return "cve"
-                } else if (type?.toLowerCase() === "secret scan") {
-                    return "secret"
-                } else if (type?.toLowerCase() === "iac scan") {
-                    return "iac"
-                } else if (type?.toLowerCase() === "container scan") {
-                    return "container"
-                } else {
-                    return type?.trim()?.toLowerCase()
-                }
-            });
-        }
-
-        // action.info(`The Info message token : ${apiKey}`)
-        action.info(`Github Repo url : ${repoUrl}`)
-        action.info(`Scan types : ${scanTypesInList}`)
-
-        const scanApiRequest = {
-            scanTypes: scanTypesInList,
-            gitRepoUrl: repoUrl,
-            projectName: projectName || "",
-        }
-
-        if (scanTypesInList.includes("dast")) {
-            scanApiRequest.scanContext = validateInputs("dast", dastScanType, dastTargetUrl, containerCtx)
-        }
-
-        if (scanTypesInList.includes("container")) {
-            scanApiRequest.containerScanContext = validateInputs("container", dastScanType, dastTargetUrl, containerCtx)
-        }
-
-        await runScan(apiKey, scanApiRequest, ACCESS_TOKEN_URL, SCAN_URL)
-
-    } catch (err) {
-        console.log("Error: ", err)
-        action.setFailed(`Scan failed: ${err.message}`);
-    }
+    await runScan(config, scanApiRequest, repoUrl);
+  } catch (error) {
+    action.setFailed(`Scan failed: ${error.message}`);
+  }
 }
 
-async function runScan(apiKey, scanApiRequest, ACCESS_TOKEN_URL, SCAN_URL) {
-    const tokenResponse = await apiAuthenticate(apiKey, ACCESS_TOKEN_URL);
+runVigilnzScan();
 
-    if (tokenResponse?.status !== 200 || !tokenResponse.access_token) {
-        console.log("Error: ", tokenResponse)
-        action.setFailed(`Scan failed: No valid access token received from Vigilnz API`);
-        return
-    }
-
-    try {
-        const response = await fetch(SCAN_URL, {
-            method: "POST",
-            headers: {
-                ['Content-Type']: "application/json",
-                "Authorization": `Bearer ${tokenResponse?.access_token}`
-            },
-            body: JSON.stringify(scanApiRequest)
-        })
-        const data = await response.json(); // parse JSON response
-
-        if (!response.ok) {
-            action.setFailed(`Scan failed (${response.status}): ${data.message || response.statusText}`);
-            return
-        }
-        console.log("Scan API Response :", data);
-        console.log("Scan Completed Successfully");
-        // console.log("Scan API Response status:", response.status);
-        // console.log("Scan API Response :", data);
-    } catch (error) {
-        action.setFailed(`Scan failed`);
-        console.log("Error in Scan API:", error)
-        return
-    }
-}
-
-async function apiAuthenticate(apiKey, ACCESS_TOKEN_URL) {
-    try {
-
-        const response = await fetch(ACCESS_TOKEN_URL,
-            {
-                method: "POST",
-                headers: { ['Content-Type']: "application/json" },
-                body: JSON.stringify({ apiKey })
-            })
-
-        const data = await response.json(); // parse JSON response
-        console.log("Access Token Response status : ", response.status);
-
-        if (!response.ok) {
-            action.setFailed(`Scan failed`);
-            throw new Error(`API request failed: ${response.status} ${response.statusText}`);
-        }
-
-        console.log("Access Token Fetched Successfully");
-        return { ...data, status: response?.status };
-    } catch (error) {
-        action.setFailed(`Scan failed`);
-        console.error("Error in apiAuthenticate:", error);
-        return null;
-    }
-}
-
-runVigilnzScan()
-
-function validateInputs(scanTypes, dastScanType, dastTargetUrl, containerCtx) {
-
-    // --- DAST validation ---
-    if (scanTypes === "dast") {
-        if (!dastScanType || !dastTargetUrl) {
-            action.setFailed(`DAST scan requires both 'dastScanType' and 'dastTargetUrl'`);
-            return false;
-        } else {
-            return {
-                dastScanType: dastScanType,
-                targetUrl: dastTargetUrl
-            }
-        }
-    }
-
-    // --- Container validation ---
-    if (scanTypes === "container" || scanTypes === "container scan") {
-
-        const {
-            containerImage,
-            containerProvider,
-            containerRegistryType,
-            containerRegistryUrl,
-            containerAuthType,
-            containerToken,
-            containerUsername,
-            containerPassword
-        } = containerCtx;
-
-        if (!containerImage || !containerProvider) {
-            action.setFailed(`Container scan requires both 'containerImage' and 'containerProvider'`);
-            return false;
-        }
-
-        let containerInfo = {
-            imageName: containerImage,
-            registryProvider: containerProvider,
-            registrySubType: null,
-            authMethod: containerAuthType || "none",
-            credentials: null,
-            customRegistryUrl: "",
-        }
-
-        switch (containerProvider.toLowerCase()) {
-            case "dockerhub":
-                if (containerAuthType === "username-password") {
-                    if (!containerUsername || !containerPassword) {
-                        action.setFailed(`DockerHub private requires 'containerUsername' and 'containerPassword'`);
-                        return null;
-                    } else {
-                        containerInfo.credentials = {
-                            username: containerUsername,
-                            password: containerPassword
-                        }
-                    }
-                }
-                return containerInfo;
-
-            case "aws-ecr":
-                if (!containerRegistryType) {
-                    action.setFailed(`AWS ECR requires 'containerRegistryType' (ecr-public or ecr-private)`);
-                    return null;
-                } else {
-                    containerInfo.registrySubType = containerRegistryType;
-                }
-
-                if (containerRegistryType === "ecr-private") {
-                    if (!containerRegistryUrl) {
-                        action.setFailed(`AWS ECR private requires 'containerRegistryUrl'`);
-                        return null;
-                    } else {
-                        containerInfo.customRegistryUrl = containerRegistryUrl;
-                    }
-                    if (containerAuthType === "token" && !containerToken) {
-                        action.setFailed(`AWS ECR private with token requires 'containerToken'`);
-                        return null;
-                    } else {
-                        containerInfo.credentials = {
-                            token: containerToken
-                        }
-                    }
-                }
-                return containerInfo;
-
-            case "github":
-            case "gitlab":
-                if (containerAuthType === "token" && !containerToken) {
-                    action.setFailed(`${containerProvider} private requires 'containerToken'`);
-                    return null;
-                } else {
-                    containerInfo.credentials = {
-                        token: containerToken
-                    }
-                }
-                return containerInfo;
-
-            case "google":
-                if (!containerRegistryType) {
-                    action.setFailed(`Google requires 'containerRegistryType' (gcr or artifact-registry)`);
-                    return null;
-                } else {
-                    containerInfo.registrySubType = containerRegistryType
-                }
-                if (containerRegistryType === "artifact-registry" && !containerRegistryUrl) {
-                    action.setFailed(`Google Artifact Registry requires 'containerRegistryUrl'`);
-                    return null;
-                } else {
-                    containerInfo.customRegistryUrl = containerRegistryUrl
-                }
-                if (containerAuthType === "token" && !containerToken) {
-                    action.setFailed(`Google private requires 'containerToken'`);
-                    return null;
-                } else {
-                    containerInfo.credentials = {
-                        token: containerToken
-                    }
-                }
-                return containerInfo;
-
-            case "azure":
-                if (!containerRegistryType) {
-                    action.setFailed(`Azure requires 'containerRegistryType' (mcr or acr-private)`);
-                    return null;
-                } else {
-                    containerInfo.registrySubType = containerRegistryType
-                }
-                if (containerRegistryType === "acr-private") {
-                    if (!containerRegistryUrl) {
-                        action.setFailed(`Azure ACR private requires 'containerRegistryUrl'`);
-                        return null;
-                    } else {
-                        containerInfo.customRegistryUrl = containerRegistryUrl
-                    }
-                    if (containerAuthType === "token" && !containerToken) {
-                        action.setFailed(`Azure ACR private with token requires 'containerToken'`);
-                        return null;
-                    } else {
-                        containerInfo.credentials = {
-                            token: containerToken
-                        }
-                    }
-                    if (containerAuthType === "username-password") {
-                        if (!containerUsername || !containerPassword) {
-                            action.setFailed(`Azure ACR private with username-password requires both 'containerUsername' and 'containerPassword'`);
-                            return null;
-                        } else {
-                            containerInfo.credentials = {
-                                username: containerUsername,
-                                password: containerPassword
-                            }
-                        }
-                    }
-                }
-                return containerInfo;
-
-            case "quay":
-                if (containerAuthType === "token" && !containerToken) {
-                    action.setFailed(`Quay private with token requires 'containerToken'`);
-                    return null;
-                } else {
-                    containerInfo.credentials = {
-                        token: containerToken
-                    }
-                }
-                if (containerAuthType === "username-password") {
-                    if (!containerUsername || !containerPassword) {
-                        action.setFailed(`Quay private with username-password requires both 'containerUsername' and 'containerPassword'`);
-                        return null;
-                    } else {
-                        containerInfo.credentials = {
-                            username: containerUsername,
-                            password: containerPassword
-                        }
-                    }
-                }
-                return containerInfo;
-
-            default:
-                action.setFailed(`Unsupported containerProvider: ${containerProvider}`);
-                return null;
-        }
-    }
-
-    return true;
-}
+module.exports = { runVigilnzScan, resolveRepoUrl, buildScanRequest, evaluateGates };
