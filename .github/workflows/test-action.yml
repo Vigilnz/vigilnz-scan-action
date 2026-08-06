@@ -1,0 +1,106 @@
+name: Test Action
+
+# Self-test: runs the action from this checkout (uses: ./), so no publish or tag is
+# needed. Trigger manually from the Actions tab to try different input combinations.
+on:
+  workflow_dispatch:
+    inputs:
+      scanTypes:
+        description: 'Comma-separated scan types'
+        required: true
+        default: 'SCA,SAST'
+      environment:
+        description: 'Vigilnz environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options: [dev, demo, prod]
+      waitForCompletion:
+        description: 'Wait for scans to finish'
+        required: true
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
+      failOnSeverity:
+        description: 'Fail at or above this severity'
+        required: true
+        default: 'none'
+        type: choice
+        options: [none, critical, high, medium, low]
+      timeoutMinutes:
+        description: 'Max minutes to wait'
+        required: true
+        default: '30'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'dist/**'
+      - 'action.yml'
+
+jobs:
+  verify-build:
+    name: Verify dist matches src
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Rebuild and fail if dist is stale
+        run: |
+          pnpm build
+          if [ -n "$(git status --porcelain dist/)" ]; then
+            echo "::error::dist/ is out of date — run 'pnpm build' and commit the result."
+            git diff --stat dist/
+            exit 1
+          fi
+          echo "dist/ is up to date."
+
+      - name: Fail if a non-production API host is hardcoded
+        run: |
+          if grep -qE 'localhost|127\.0\.0\.1' dist/index.js; then
+            echo "::error::dist/index.js contains a localhost URL — revert src/constants.js."
+            exit 1
+          fi
+          echo "No localhost URLs in dist/."
+
+  scan:
+    name: Run scan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      # './' runs the action from this checkout — no tag, release or marketplace needed.
+      - name: Run Vigilnz Scan
+        id: vigilnz
+        uses: ./
+        with:
+          vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
+          scanTypes: ${{ inputs.scanTypes }}
+          projectName: 'action-self-test'
+          environment: ${{ inputs.environment }}
+          waitForCompletion: ${{ inputs.waitForCompletion }}
+          timeoutMinutes: ${{ inputs.timeoutMinutes }}
+          pollIntervalSeconds: '10'
+          failOnSeverity: ${{ inputs.failOnSeverity }}
+
+      - name: Show outputs
+        if: always()
+        run: |
+          echo "scanStatus:    ${{ steps.vigilnz.outputs.scanStatus }}"
+          echo "scanTargetIds: ${{ steps.vigilnz.outputs.scanTargetIds }}"
+          echo "critical:      ${{ steps.vigilnz.outputs.criticalCount }}"
+          echo "high:          ${{ steps.vigilnz.outputs.highCount }}"
+          echo "medium:        ${{ steps.vigilnz.outputs.mediumCount }}"
+          echo "low:           ${{ steps.vigilnz.outputs.lowCount }}"
+          echo "total:         ${{ steps.vigilnz.outputs.totalFindings }}"
