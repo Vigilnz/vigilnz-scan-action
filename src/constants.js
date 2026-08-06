@@ -8,8 +8,7 @@
 
 "use strict";
 
-// const DEV_DEFAULT_URL = "https://devapi.vigilnz.com";
-const DEV_DEFAULT_URL = "http://localhost:1337";
+const DEV_DEFAULT_URL = "https://devapi.vigilnz.com";
 const DEMO_DEFAULT_URL = "https://demoapi.vigilnz.com";
 const PROD_DEFAULT_URL = "https://api.vigilnz.com";
 
