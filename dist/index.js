@@ -32065,6 +32065,7 @@ module.exports = {
  *          and gates the job on finding severity.
  * Author: Vigilnz
  * Date: 2026-08-06
+ * Modified: 2026-08-11 — send the workflow branch so scans are not stored branchless
  */
 
 
@@ -32089,6 +32090,20 @@ function resolveRepoUrl() {
   const repo = process.env.GITHUB_REPOSITORY;
   const serverUrl = process.env.GITHUB_SERVER_URL;
   return `${serverUrl}/${repo}`;
+}
+
+/**
+ * Resolve the branch this workflow is running against.
+ *
+ * On pull_request events GITHUB_REF_NAME is the synthetic merge ref ("42/merge"),
+ * so GITHUB_HEAD_REF (the source branch) is preferred when present.
+ *
+ * @returns {string} Branch name, or "" when the ref cannot be determined
+ */
+function resolveBranchName() {
+  const headRef = String(process.env.GITHUB_HEAD_REF || "").trim();
+  if (headRef) return headRef;
+  return String(process.env.GITHUB_REF_NAME || "").trim();
 }
 
 /**
@@ -32121,13 +32136,15 @@ function hasValidRequiredInputs(config) {
  *
  * @param {object} config
  * @param {string} repoUrl
+ * @param {string} [branch] - Branch under scan; omitted from the body when empty
  * @returns {object|null} Request body, or null when a scan context failed validation
  */
-function buildScanRequest(config, repoUrl) {
+function buildScanRequest(config, repoUrl, branch) {
   const scanApiRequest = {
     scanTypes: config.scanTypesInList,
     gitRepoUrl: repoUrl,
     projectName: config.projectName || "",
+    ...(branch ? { branch } : {}),
   };
 
   if (config.scanTypesInList.includes(SCAN_TYPE.DAST)) {
@@ -32276,10 +32293,12 @@ async function runVigilnzScan() {
     if (!hasValidRequiredInputs(config)) return;
 
     const repoUrl = resolveRepoUrl();
+    const branch = resolveBranchName();
     action.info(`GitHub repo url : ${repoUrl}`);
+    action.info(`Branch : ${branch || "(not resolved — platform will use the repo default)"}`);
     action.info(`Scan types : ${config.scanTypesInList.join(", ")}`);
 
-    const scanApiRequest = buildScanRequest(config, repoUrl);
+    const scanApiRequest = buildScanRequest(config, repoUrl, branch);
     if (!scanApiRequest) return;
 
     await runScan(config, scanApiRequest, repoUrl);
@@ -32290,7 +32309,13 @@ async function runVigilnzScan() {
 
 runVigilnzScan();
 
-module.exports = { runVigilnzScan, resolveRepoUrl, buildScanRequest, evaluateGates };
+module.exports = {
+  runVigilnzScan,
+  resolveRepoUrl,
+  resolveBranchName,
+  buildScanRequest,
+  evaluateGates,
+};
 
 
 /***/ }),

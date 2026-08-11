@@ -87,6 +87,10 @@ jobs:
 | projectName          | False    | Project name for the scan                                                      |
 | environment         | False    | Environment for the scan (`dev`, `development`, `demo`, `prod`, `production`)  |
 
+The scanned **branch** needs no input — the action reads it from the workflow context
+(`GITHUB_HEAD_REF` on `pull_request` events, otherwise `GITHUB_REF_NAME`) and sends it with the
+scan so results are grouped under the right branch in the Vigilnz UI.
+
 ### Wait & Gating Inputs
 
 By default the action **queues** the scans and finishes immediately — it does not wait for
