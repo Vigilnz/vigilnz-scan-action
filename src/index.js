@@ -6,6 +6,7 @@
  * Author: Vigilnz
  * Date: 2026-08-06
  * Modified: 2026-08-11 — send the workflow branch so scans are not stored branchless
+ * Modified: 2026-08-11 — send CI provenance (run id, build number, commit) with every scan
  */
 
 "use strict";
@@ -14,6 +15,7 @@ const action = require("@actions/core");
 
 const { SCAN_STATUS } = require("./constants");
 const { readInputs } = require("./inputs");
+const { buildCiContext } = require("./ci-context");
 const { buildDastContext, buildContainerContext } = require("./scan-context");
 const { authenticate, submitScan } = require("./api-client");
 const { waitForScans, countAtOrAboveSeverity, EMPTY_SUMMARY } = require("./wait-for-scans");
@@ -77,14 +79,16 @@ function hasValidRequiredInputs(config) {
  * @param {object} config
  * @param {string} repoUrl
  * @param {string} [branch] - Branch under scan; omitted from the body when empty
+ * @param {Record<string, string>|null} [ciContext] - CI provenance; omitted when unresolved
  * @returns {object|null} Request body, or null when a scan context failed validation
  */
-function buildScanRequest(config, repoUrl, branch) {
+function buildScanRequest(config, repoUrl, branch, ciContext) {
   const scanApiRequest = {
     scanTypes: config.scanTypesInList,
     gitRepoUrl: repoUrl,
     projectName: config.projectName || "",
     ...(branch ? { branch } : {}),
+    ...(ciContext ? { ciContext } : {}),
   };
 
   if (config.scanTypesInList.includes(SCAN_TYPE.DAST)) {
@@ -234,11 +238,18 @@ async function runVigilnzScan() {
 
     const repoUrl = resolveRepoUrl();
     const branch = resolveBranchName();
+    const ciContext = buildCiContext();
     action.info(`GitHub repo url : ${repoUrl}`);
     action.info(`Branch : ${branch || "(not resolved — platform will use the repo default)"}`);
     action.info(`Scan types : ${config.scanTypesInList.join(", ")}`);
+    if (ciContext) {
+      action.info(
+        `CI run : #${ciContext.buildNumber || "?"} (run ${ciContext.runId || "?"}) ` +
+          `commit ${(ciContext.commit || "").slice(0, 7) || "?"}`
+      );
+    }
 
-    const scanApiRequest = buildScanRequest(config, repoUrl, branch);
+    const scanApiRequest = buildScanRequest(config, repoUrl, branch, ciContext);
     if (!scanApiRequest) return;
 
     await runScan(config, scanApiRequest, repoUrl);

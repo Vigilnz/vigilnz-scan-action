@@ -31983,6 +31983,100 @@ module.exports = {
 
 /***/ }),
 
+/***/ 6437:
+/***/ ((module) => {
+
+"use strict";
+/**
+ * ci-context.js
+ * Purpose: Build the CI provenance payload (run id, build number, commit, workflow …) that
+ *          the action sends with every scan so the platform can attribute results to the
+ *          exact GitHub Actions run that produced them.
+ * Author: Vigilnz
+ * Date: 2026-08-11
+ */
+
+
+
+/** Provider token stored alongside the metadata so other CI systems can be added later. */
+const CI_PROVIDER = "github-actions";
+
+/**
+ * Upper bound for any single metadata value. Keeps a hostile or misconfigured runner from
+ * writing unbounded strings into the scan-target document (the backend caps this too).
+ */
+const MAX_FIELD_LENGTH = 512;
+
+/**
+ * Read an environment variable as a trimmed, length-capped string.
+ *
+ * @param {string} name - Environment variable name
+ * @returns {string} Trimmed value, or "" when unset
+ */
+function readEnv(name) {
+  return String(process.env[name] || "").trim().slice(0, MAX_FIELD_LENGTH);
+}
+
+/**
+ * Build the run URL GitHub does not expose directly as an env var.
+ *
+ * @param {string} serverUrl - e.g. https://github.com
+ * @param {string} repository - e.g. owner/repo
+ * @param {string} runId - Workflow run id
+ * @param {string} runAttempt - Workflow run attempt
+ * @returns {string} Deep link to the run, or "" when the parts are missing
+ */
+function buildRunUrl(serverUrl, repository, runId, runAttempt) {
+  if (!serverUrl || !repository || !runId) return "";
+
+  const base = `${serverUrl}/${repository}/actions/runs/${runId}`;
+  return runAttempt ? `${base}/attempts/${runAttempt}` : base;
+}
+
+/**
+ * Collect the CI provenance metadata for the current workflow run.
+ *
+ * Every field is optional — a runner missing one (or a local `act` run) simply omits it
+ * rather than sending an empty string. Returns null when nothing could be resolved, so the
+ * caller can leave the request body untouched.
+ *
+ * @returns {Record<string, string>|null} CI context, or null when no metadata is available
+ */
+function buildCiContext() {
+  const repository = readEnv("GITHUB_REPOSITORY");
+  const runId = readEnv("GITHUB_RUN_ID");
+  const runAttempt = readEnv("GITHUB_RUN_ATTEMPT");
+
+  const candidate = {
+    provider: CI_PROVIDER,
+    runId,
+    // GITHUB_RUN_NUMBER is the human-facing build number shown in the Actions UI.
+    buildNumber: readEnv("GITHUB_RUN_NUMBER"),
+    runAttempt,
+    commit: readEnv("GITHUB_SHA"),
+    repository,
+    ref: readEnv("GITHUB_REF"),
+    workflow: readEnv("GITHUB_WORKFLOW"),
+    jobName: readEnv("GITHUB_JOB"),
+    eventName: readEnv("GITHUB_EVENT_NAME"),
+    actor: readEnv("GITHUB_ACTOR"),
+    runUrl: buildRunUrl(readEnv("GITHUB_SERVER_URL"), repository, runId, runAttempt),
+  };
+
+  const ciContext = {};
+  for (const [key, value] of Object.entries(candidate)) {
+    if (value) ciContext[key] = value;
+  }
+
+  // `provider` alone carries no provenance — treat that as "no CI metadata".
+  return Object.keys(ciContext).length > 1 ? ciContext : null;
+}
+
+module.exports = { buildCiContext, buildRunUrl, CI_PROVIDER, MAX_FIELD_LENGTH };
+
+
+/***/ }),
+
 /***/ 9298:
 /***/ ((module) => {
 
@@ -32066,6 +32160,7 @@ module.exports = {
  * Author: Vigilnz
  * Date: 2026-08-06
  * Modified: 2026-08-11 — send the workflow branch so scans are not stored branchless
+ * Modified: 2026-08-11 — send CI provenance (run id, build number, commit) with every scan
  */
 
 
@@ -32074,6 +32169,7 @@ const action = __nccwpck_require__(7153);
 
 const { SCAN_STATUS } = __nccwpck_require__(9298);
 const { readInputs } = __nccwpck_require__(3666);
+const { buildCiContext } = __nccwpck_require__(6437);
 const { buildDastContext, buildContainerContext } = __nccwpck_require__(2872);
 const { authenticate, submitScan } = __nccwpck_require__(1603);
 const { waitForScans, countAtOrAboveSeverity, EMPTY_SUMMARY } = __nccwpck_require__(7583);
@@ -32137,14 +32233,16 @@ function hasValidRequiredInputs(config) {
  * @param {object} config
  * @param {string} repoUrl
  * @param {string} [branch] - Branch under scan; omitted from the body when empty
+ * @param {Record<string, string>|null} [ciContext] - CI provenance; omitted when unresolved
  * @returns {object|null} Request body, or null when a scan context failed validation
  */
-function buildScanRequest(config, repoUrl, branch) {
+function buildScanRequest(config, repoUrl, branch, ciContext) {
   const scanApiRequest = {
     scanTypes: config.scanTypesInList,
     gitRepoUrl: repoUrl,
     projectName: config.projectName || "",
     ...(branch ? { branch } : {}),
+    ...(ciContext ? { ciContext } : {}),
   };
 
   if (config.scanTypesInList.includes(SCAN_TYPE.DAST)) {
@@ -32294,11 +32392,18 @@ async function runVigilnzScan() {
 
     const repoUrl = resolveRepoUrl();
     const branch = resolveBranchName();
+    const ciContext = buildCiContext();
     action.info(`GitHub repo url : ${repoUrl}`);
     action.info(`Branch : ${branch || "(not resolved — platform will use the repo default)"}`);
     action.info(`Scan types : ${config.scanTypesInList.join(", ")}`);
+    if (ciContext) {
+      action.info(
+        `CI run : #${ciContext.buildNumber || "?"} (run ${ciContext.runId || "?"}) ` +
+          `commit ${(ciContext.commit || "").slice(0, 7) || "?"}`
+      );
+    }
 
-    const scanApiRequest = buildScanRequest(config, repoUrl, branch);
+    const scanApiRequest = buildScanRequest(config, repoUrl, branch, ciContext);
     if (!scanApiRequest) return;
 
     await runScan(config, scanApiRequest, repoUrl);
