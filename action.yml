@@ -37,6 +37,14 @@ inputs:
     required: false
     default: 'true'
 
+  # Monorepo path scoping (repo-file scans only: sca/sbom/sast/iac/secret)
+  includePaths:
+    description: 'Comma-separated repository-root-relative paths to scan (e.g. "backend/,shared/"). Empty scans the whole repository'
+    required: false
+  excludePaths:
+    description: 'Comma-separated repository-root-relative paths to skip. Applied after includePaths'
+    required: false
+
   # DAST fields
   dastScanType:
     description: 'DAST scan type (e.g., spider, active)'

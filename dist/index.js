@@ -32126,6 +32126,27 @@ const TERMINAL_SCAN_STATUSES = Object.freeze([SCAN_STATUS.COMPLETE, SCAN_STATUS.
 /** Severity gate ordering — index 0 is the most severe. */
 const SEVERITY_LEVELS = Object.freeze(["critical", "high", "medium", "low"]);
 
+/** Separator for the comma-separated includePaths / excludePaths inputs. */
+const PATH_SCOPE_SEPARATOR = ",";
+
+/** Bounds on the path-scope lists, mirroring the backend's own caps. */
+const MAX_PATH_SCOPE_ENTRIES = 32;
+const MAX_PATH_LENGTH = 512;
+
+/**
+ * Scan types that read repository files and therefore honour a path scope.
+ * dast (targets a URL) and container (targets an image) are deliberately absent.
+ */
+const REPO_FILE_SCAN_TYPES = Object.freeze([
+  "cve",
+  "sbom",
+  "sast",
+  "iac",
+  "secret",
+  "aibom",
+  "skillsecure",
+]);
+
 module.exports = {
   DEV_DEFAULT_URL,
   DEMO_DEFAULT_URL,
@@ -32143,6 +32164,10 @@ module.exports = {
   SCAN_STATUS,
   TERMINAL_SCAN_STATUSES,
   SEVERITY_LEVELS,
+  PATH_SCOPE_SEPARATOR,
+  MAX_PATH_SCOPE_ENTRIES,
+  MAX_PATH_LENGTH,
+  REPO_FILE_SCAN_TYPES,
 };
 
 
@@ -32171,6 +32196,7 @@ const { SCAN_STATUS } = __nccwpck_require__(9298);
 const { readInputs } = __nccwpck_require__(3666);
 const { buildCiContext } = __nccwpck_require__(6437);
 const { buildDastContext, buildContainerContext } = __nccwpck_require__(2872);
+const { buildPathScope } = __nccwpck_require__(6169);
 const { authenticate, submitScan } = __nccwpck_require__(1603);
 const { waitForScans, countAtOrAboveSeverity, EMPTY_SUMMARY } = __nccwpck_require__(7583);
 const { setOutputs, writeJobSummary, logTotals } = __nccwpck_require__(1433);
@@ -32244,6 +32270,16 @@ function buildScanRequest(config, repoUrl, branch, ciContext) {
     ...(branch ? { branch } : {}),
     ...(ciContext ? { ciContext } : {}),
   };
+
+  // Resolved before the DAST branch below, which owns scanApiRequest.scanContext —
+  // path scope travels as its own top-level field so the two never collide.
+  const pathScope = buildPathScope(
+    config.includePaths,
+    config.excludePaths,
+    config.scanTypesInList
+  );
+  if (pathScope === false) return null;
+  if (pathScope) scanApiRequest.pathScope = pathScope;
 
   if (config.scanTypesInList.includes(SCAN_TYPE.DAST)) {
     const dastContext = buildDastContext(config.dastScanType, config.dastTargetUrl);
@@ -32605,6 +32641,10 @@ function readInputs() {
     dastTargetUrl: action.getInput("dastTargetUrl"),
     containerCtx: readContainerContext(),
 
+    // Raw here; normalized and validated by buildPathScope in path-scope.js.
+    includePaths: action.getInput("includePaths"),
+    excludePaths: action.getInput("excludePaths"),
+
     shouldWaitForCompletion: parseBoolean(action.getInput("waitForCompletion")),
     timeoutMinutes: parseBoundedNumber(action.getInput("timeoutMinutes"), {
       fallback: DEFAULT_TIMEOUT_MINUTES,
@@ -32631,6 +32671,143 @@ module.exports = {
   normalizeScanTypes,
   readInputs,
 };
+
+
+/***/ }),
+
+/***/ 6169:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+/**
+ * path-scope.js
+ * Purpose: Build the monorepo path-scope payload from the includePaths / excludePaths
+ *          inputs, so a scan of a monorepo can be limited to one service folder instead
+ *          of the whole repository. Rejects paths that are not safely repo-relative
+ *          before any request is issued.
+ * Author: Vigilnz
+ * Date: 2026-08-12
+ */
+
+
+
+const action = __nccwpck_require__(7153);
+
+const {
+  PATH_SCOPE_SEPARATOR,
+  MAX_PATH_SCOPE_ENTRIES,
+  MAX_PATH_LENGTH,
+  REPO_FILE_SCAN_TYPES,
+} = __nccwpck_require__(9298);
+
+/** Matches a Windows drive-letter prefix (e.g. `C:\`), which is an absolute path. */
+const WINDOWS_ABSOLUTE_PATH_PATTERN = /^[A-Za-z]:/;
+
+/**
+ * Report whether a path is safely repo-root-relative.
+ *
+ * Rejected: absolute POSIX (`/x`) and Windows (`C:\x`) paths, UNC-style (`\\host`) paths,
+ * `~` home references, over-length values, and anything containing a `..` segment.
+ *
+ * @param {string} value - Already trimmed
+ * @returns {boolean}
+ */
+function isSafeRelativePath(value) {
+  if (!value || value.length > MAX_PATH_LENGTH) return false;
+  if (value.startsWith("/") || value.startsWith("\\")) return false;
+  if (WINDOWS_ABSOLUTE_PATH_PATTERN.test(value)) return false;
+  if (value.startsWith("~")) return false;
+
+  // Segment-wise so `..foo` (a legitimate directory name) is allowed while any real
+  // parent-directory hop is not, on either separator.
+  return !value.split(/[/\\]+/).includes("..");
+}
+
+/**
+ * Split, validate and normalize one comma-separated path input.
+ *
+ * @param {string} raw - Input value, e.g. "backend/, shared"
+ * @param {string} inputName - Input name, used in the failure message
+ * @returns {string[]|false} Normalized prefixes, or false when an entry was rejected
+ */
+function normalizePathList(raw, inputName) {
+  const entries = String(raw || "")
+    .split(PATH_SCOPE_SEPARATOR)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  const normalized = new Set();
+  for (const entry of entries) {
+    if (!isSafeRelativePath(entry)) {
+      action.setFailed(
+        `Invalid '${inputName}' entry: "${entry}". Paths must be relative to the repository ` +
+          `root, must not be absolute and must not contain '..'.`
+      );
+      return false;
+    }
+
+    const prefix = entry.replace(/\\/g, "/").replace(/\/+/g, "/").replace(/\/+$/, "");
+    if (prefix) normalized.add(prefix);
+  }
+
+  if (normalized.size > MAX_PATH_SCOPE_ENTRIES) {
+    action.setFailed(
+      `Too many '${inputName}' entries (${normalized.size}); the maximum is ${MAX_PATH_SCOPE_ENTRIES}.`
+    );
+    return false;
+  }
+
+  return [...normalized];
+}
+
+/**
+ * Report whether any requested scan type reads repository files.
+ *
+ * @param {string[]} scanTypesInList
+ * @returns {boolean}
+ */
+function hasRepoFileScanType(scanTypesInList) {
+  return scanTypesInList.some((scanType) => REPO_FILE_SCAN_TYPES.includes(scanType));
+}
+
+/**
+ * Build the `pathScope` request field.
+ *
+ * @param {string} includePaths - Raw includePaths input
+ * @param {string} excludePaths - Raw excludePaths input
+ * @param {string[]} scanTypesInList - Normalized scan types for this run
+ * @returns {{includedPaths?: string[], excludedPaths?: string[]}|null|false}
+ *          Payload to send, null when there is nothing to scope, or false when an input
+ *          failed validation (the run has already been failed)
+ */
+function buildPathScope(includePaths, excludePaths, scanTypesInList) {
+  const included = normalizePathList(includePaths, "includePaths");
+  if (included === false) return false;
+
+  const excluded = normalizePathList(excludePaths, "excludePaths");
+  if (excluded === false) return false;
+
+  if (included.length === 0 && excluded.length === 0) {
+    return null;
+  }
+
+  // dast targets a URL and container targets an image, so neither reads repository
+  // files. Scoping such a run is a no-op worth telling the user about.
+  if (!hasRepoFileScanType(scanTypesInList)) {
+    action.warning(
+      "'includePaths' / 'excludePaths' were ignored: none of the requested scan types " +
+        "read repository files."
+    );
+    return null;
+  }
+
+  return {
+    ...(included.length > 0 ? { includedPaths: included } : {}),
+    ...(excluded.length > 0 ? { excludedPaths: excluded } : {}),
+  };
+}
+
+module.exports = { isSafeRelativePath, normalizePathList, hasRepoFileScanType, buildPathScope };
 
 
 /***/ }),

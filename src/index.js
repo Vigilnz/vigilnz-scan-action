@@ -17,6 +17,7 @@ const { SCAN_STATUS } = require("./constants");
 const { readInputs } = require("./inputs");
 const { buildCiContext } = require("./ci-context");
 const { buildDastContext, buildContainerContext } = require("./scan-context");
+const { buildPathScope } = require("./path-scope");
 const { authenticate, submitScan } = require("./api-client");
 const { waitForScans, countAtOrAboveSeverity, EMPTY_SUMMARY } = require("./wait-for-scans");
 const { setOutputs, writeJobSummary, logTotals } = require("./report");
@@ -90,6 +91,16 @@ function buildScanRequest(config, repoUrl, branch, ciContext) {
     ...(branch ? { branch } : {}),
     ...(ciContext ? { ciContext } : {}),
   };
+
+  // Resolved before the DAST branch below, which owns scanApiRequest.scanContext —
+  // path scope travels as its own top-level field so the two never collide.
+  const pathScope = buildPathScope(
+    config.includePaths,
+    config.excludePaths,
+    config.scanTypesInList
+  );
+  if (pathScope === false) return null;
+  if (pathScope) scanApiRequest.pathScope = pathScope;
 
   if (config.scanTypesInList.includes(SCAN_TYPE.DAST)) {
     const dastContext = buildDastContext(config.dastScanType, config.dastTargetUrl);

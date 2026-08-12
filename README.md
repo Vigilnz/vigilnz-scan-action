@@ -91,6 +91,41 @@ The scanned **branch** needs no input — the action reads it from the workflow 
 (`GITHUB_HEAD_REF` on `pull_request` events, otherwise `GITHUB_REF_NAME`) and sends it with the
 scan so results are grouped under the right branch in the Vigilnz UI.
 
+### Monorepo Path Scoping
+
+By default the whole repository is scanned. In a monorepo you usually want a pipeline to scan
+only the service it builds. Both inputs take a comma-separated list of paths **relative to the
+repository root**.
+
+| Name         | Required | Description                                                                 |
+|--------------|----------|-----------------------------------------------------------------------------|
+| includePaths | False    | Only scan these paths. Empty (the default) scans the whole repository       |
+| excludePaths | False    | Skip these paths. Applied after `includePaths`, so an exclusion wins        |
+
+```yaml
+- name: Scan only the backend service
+  uses: vigilnz/vigilnz-scan-action@v1
+  with:
+    vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
+    scanTypes: "sca,secret"
+    includePaths: "backend/,shared/"
+    excludePaths: "backend/API/tests/"
+```
+
+A path matches a file when it equals the path or is one of its parent directories, on segment
+boundaries — so `backend` matches `backend/api.js` but never `backend-legacy/api.js`. Trailing
+slashes are optional. Absolute paths and any path containing `..` are rejected and fail the
+step before a scan is queued.
+
+Applies to the repository-file scan types (`sca`, `sbom`, `sast`, `iac`, `secret`). `dast`
+targets a URL and `container` targets an image, so both ignore these inputs; a run consisting
+only of those types logs a warning and scans as normal.
+
+> **SCA note:** an `sca` scope must contain a dependency manifest or lock file. Scoping to a
+> directory that has neither — for example a workspace member whose lock file lives at the
+> repository root — reports no dependencies. The worker log records
+> `path scope matched 0 dependency manifests` when this happens.
+
 ### Wait & Gating Inputs
 
 By default the action **queues** the scans and finishes immediately — it does not wait for

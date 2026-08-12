@@ -43,6 +43,27 @@ const TERMINAL_SCAN_STATUSES = Object.freeze([SCAN_STATUS.COMPLETE, SCAN_STATUS.
 /** Severity gate ordering — index 0 is the most severe. */
 const SEVERITY_LEVELS = Object.freeze(["critical", "high", "medium", "low"]);
 
+/** Separator for the comma-separated includePaths / excludePaths inputs. */
+const PATH_SCOPE_SEPARATOR = ",";
+
+/** Bounds on the path-scope lists, mirroring the backend's own caps. */
+const MAX_PATH_SCOPE_ENTRIES = 32;
+const MAX_PATH_LENGTH = 512;
+
+/**
+ * Scan types that read repository files and therefore honour a path scope.
+ * dast (targets a URL) and container (targets an image) are deliberately absent.
+ */
+const REPO_FILE_SCAN_TYPES = Object.freeze([
+  "cve",
+  "sbom",
+  "sast",
+  "iac",
+  "secret",
+  "aibom",
+  "skillsecure",
+]);
+
 module.exports = {
   DEV_DEFAULT_URL,
   DEMO_DEFAULT_URL,
@@ -60,4 +81,8 @@ module.exports = {
   SCAN_STATUS,
   TERMINAL_SCAN_STATUSES,
   SEVERITY_LEVELS,
+  PATH_SCOPE_SEPARATOR,
+  MAX_PATH_SCOPE_ENTRIES,
+  MAX_PATH_LENGTH,
+  REPO_FILE_SCAN_TYPES,
 };

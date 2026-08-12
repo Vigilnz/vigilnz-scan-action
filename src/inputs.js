@@ -174,6 +174,10 @@ function readInputs() {
     dastTargetUrl: action.getInput("dastTargetUrl"),
     containerCtx: readContainerContext(),
 
+    // Raw here; normalized and validated by buildPathScope in path-scope.js.
+    includePaths: action.getInput("includePaths"),
+    excludePaths: action.getInput("excludePaths"),
+
     shouldWaitForCompletion: parseBoolean(action.getInput("waitForCompletion")),
     timeoutMinutes: parseBoundedNumber(action.getInput("timeoutMinutes"), {
       fallback: DEFAULT_TIMEOUT_MINUTES,
