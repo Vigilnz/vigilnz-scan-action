@@ -67,7 +67,6 @@ jobs:
           vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
           scanTypes: "SCA,SBOM,SAST,SECRET SCAN,IAC SCAN"
           projectName: "my-project"
-          environment: "production"
 
 ```
 
@@ -85,7 +84,6 @@ jobs:
 | Name                | Required | Description                                                                    |
 |---------------------|----------|--------------------------------------------------------------------------------|
 | projectName          | False    | Project name for the scan                                                      |
-| environment         | False    | Environment for the scan (`dev`, `development`, `demo`, `prod`, `production`)  |
 
 The scanned **branch** needs no input — the action reads it from the workflow context
 (`GITHUB_HEAD_REF` on `pull_request` events, otherwise `GITHUB_REF_NAME`) and sends it with the
@@ -189,7 +187,6 @@ Outputs are always set. Severity counts are `0` unless `waitForCompletion: true`
     vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
     scanTypes: "SCA,SAST,SECRET SCAN"
     projectName: "my-application"
-    environment: "production"
     waitForCompletion: true
     timeoutMinutes: 45
     failOnSeverity: high
@@ -228,7 +225,6 @@ with:
   vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
   scanTypes: "SCA,SBOM,SAST,SECRET SCAN,IAC SCAN"
   projectName: "my-application"
-  environment: "production"
 ```
 
 ### Run DAST scan:
@@ -326,7 +322,6 @@ with:
   vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
   scanTypes: "SCA,SAST,DAST,CONTAINER SCAN"
   projectName: "full-stack-app"
-  environment: "production"
   # DAST configuration
   dastScanType: "active"
   dastTargetUrl: "https://myapp.example.com"

@@ -12,8 +12,9 @@ inputs:
     description: 'Project name for the scan'
     required: false
   environment:
-    description: 'Choose which environment the scan trigger'
+    description: 'Internal only — Vigilnz environment the scan targets (dev, demo, production)'
     required: false
+    default: 'production'
 
   # Wait / gating fields
   waitForCompletion:

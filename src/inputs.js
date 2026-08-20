@@ -3,7 +3,7 @@
  * Purpose: Read, normalise and bound-check every action input; resolve the API base
  *          URL per environment and mask credential inputs in the workflow log.
  * Author: Vigilnz
- * Date: 2026-08-06
+ * Date: 2026-08-20
  */
 
 "use strict";
@@ -26,21 +26,23 @@ const {
 /**
  * Resolve the Vigilnz API base URL for the requested environment.
  *
+ * Internal input: consumers do not set this, so an empty or unrecognised value
+ * resolves to production.
+ *
  * @param {string} [env] - "dev" | "development" | "demo" | "prod" | "production"
- * @returns {string} Base URL (defaults to dev when unrecognised)
+ * @returns {string} Base URL (defaults to production when unrecognised)
  */
 function getBaseUrl(env) {
   switch (env?.toLowerCase()) {
     case "dev":
     case "development":
       return DEV_DEFAULT_URL;
-    case "prod":
-    case "production":
-      return PROD_DEFAULT_URL;
     case "demo":
       return DEMO_DEFAULT_URL;
+    case "prod":
+    case "production":
     default:
-      return DEV_DEFAULT_URL;
+      return PROD_DEFAULT_URL;
   }
 }
 
