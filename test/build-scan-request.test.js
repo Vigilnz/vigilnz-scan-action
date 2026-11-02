@@ -70,6 +70,21 @@ describe("buildScanRequest without path scope", () => {
   });
 });
 
+describe("buildScanRequest with repoAccessToken", () => {
+  it("omits repoAccessToken when not configured", () => {
+    const body = buildScanRequest(baseConfig(), REPO_URL, "main", null);
+
+    assert.equal("repoAccessToken" in body, false);
+  });
+
+  it("adds repoAccessToken as a top-level field when configured", () => {
+    const config = baseConfig({ repoAccessToken: "ghp_example-token" });
+    const body = buildScanRequest(config, REPO_URL, "main", null);
+
+    assert.equal(body.repoAccessToken, "ghp_example-token");
+  });
+});
+
 describe("buildScanRequest with path scope", () => {
   it("adds pathScope as a top-level field", () => {
     const config = baseConfig({ includePaths: "backend/", excludePaths: "backend/API/tests/" });

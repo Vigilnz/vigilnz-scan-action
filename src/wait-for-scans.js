@@ -36,14 +36,17 @@ const EMPTY_SUMMARY = Object.freeze({
  * @param {{scanTargetId: string, scanType: string, branch?: string}} target - Any extra
  *   fields (e.g. `branch`) are carried through to the returned outcome untouched, so
  *   callers can attach per-target metadata without this function needing to know about it.
- * @returns {Promise<{scanTargetId: string, scanType: string, status: string, message: string, scanId: string|null}>}
+ * @returns {Promise<{scanTargetId: string, scanType: string, status: string, percent: number, message: string, scanId: string|null}>}
+ *   `percent` is always present — on the error/timeout paths it is the last value actually
+ *   observed before polling gave up (0 if none was ever read), so a record always shows how
+ *   far the scan got, not just that it failed.
  */
 async function pollScanTarget(ctx, target) {
   const { baseUrl, token, deadlineMs, pollIntervalMs } = ctx;
   const { scanTargetId, scanType } = target;
 
   let consecutiveErrors = 0;
-  let lastPercent = -1;
+  let lastPercent = 0;
 
   while (Date.now() < deadlineMs) {
     try {
@@ -68,6 +71,7 @@ async function pollScanTarget(ctx, target) {
         return {
           ...target,
           status: SCAN_STATUS.ERROR,
+          percent: lastPercent,
           message: "Status endpoint unreachable",
           scanId: null,
         };
@@ -80,6 +84,7 @@ async function pollScanTarget(ctx, target) {
   return {
     ...target,
     status: SCAN_STATUS.TIMED_OUT,
+    percent: lastPercent,
     message: "Timed out waiting for scan to complete",
     scanId: null,
   };

@@ -79,6 +79,28 @@ describe("branch threaded through scan outcomes and outputs", () => {
 
     assert.equal(outcome.branch, "main");
     assert.equal(outcome.status, "error");
+    assert.equal(outcome.percent, 0, "percent must always be present, even on this fallback path");
+  });
+
+  it("a timed-out scan reports the last percent actually observed, not an absent/undefined field", async () => {
+    let call = 0;
+    stubApiClient({
+      fetchScanStatus: async () => {
+        call += 1;
+        // First poll reports progress; the deadline then elapses before another terminal status arrives.
+        return { status: "running", percent: call === 1 ? 42 : 42, message: "scanning", scanId: null };
+      },
+      fetchScanSummary: async () => ({ critical: 0, high: 0, medium: 0, low: 0, totalFindings: 0 }),
+    });
+    const { pollScanTarget } = require(waitForScansPath);
+
+    const outcome = await pollScanTarget(
+      { baseUrl: "https://x", token: "t", deadlineMs: Date.now() + 5, pollIntervalMs: 1 },
+      { scanTargetId: "tgt-3", scanType: "iac", branch: "main" },
+    );
+
+    assert.equal(outcome.status, "timed_out");
+    assert.equal(outcome.percent, 42, "the last observed percent should survive into the timeout outcome");
   });
 
   it("waitForScans polls every scan target concurrently (not one after another), and every outcome carries the same branch", async () => {

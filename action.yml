@@ -16,6 +16,15 @@ inputs:
     required: false
     default: 'production'
 
+  # Private repository access (repo-file scans only: sca/sbom/sast/iac/secret)
+  repoAccessToken:
+    description: >-
+      Fallback access token for resolving this repository's metadata when it is private
+      (e.g. ${{ secrets.GITHUB_TOKEN }} or a PAT with read access). Only used when the
+      Vigilnz account has no GitHub integration connected that already covers this repo;
+      never persisted — used only for the single scan request it is sent with.
+    required: false
+
   # Wait / gating fields
   waitForCompletion:
     description: 'Block the job until every queued scan finishes (default false — queue and exit)'
@@ -100,7 +109,7 @@ outputs:
   totalFindings:
     description: 'Total findings across all scans (0 unless waitForCompletion is true)'
   resultsJson:
-    description: 'JSON array of per-scan outcomes with status and severity summary'
+    description: 'JSON array of per-scan outcomes, one per scan type queued. Each entry: scanTargetId, scanType, branch, status (pending/complete/error/timed_out), percent, message, scanId, summary ({critical,high,medium,low,totalFindings}), isSummaryAvailable. Same schema whether or not waitForCompletion was set.'
 
 runs:
   using: 'node20'

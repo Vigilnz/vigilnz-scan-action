@@ -165,11 +165,15 @@ function readInputs() {
   const apiKey = action.getInput("vigilnzApiKey");
   if (apiKey) action.setSecret(apiKey);
 
+  const repoAccessToken = action.getInput("repoAccessToken");
+  if (repoAccessToken) action.setSecret(repoAccessToken);
+
   const environment = action.getInput("environment");
   const scanTypes = action.getInput("scanTypes");
 
   return {
     apiKey,
+    repoAccessToken,
     scanTypes,
     scanTypesInList: normalizeScanTypes(scanTypes),
     projectName: action.getInput("projectName"),

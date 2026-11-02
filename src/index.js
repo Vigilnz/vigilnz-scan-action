@@ -90,6 +90,7 @@ function buildScanRequest(config, repoUrl, branch, ciContext) {
     projectName: config.projectName || "",
     ...(branch ? { branch } : {}),
     ...(ciContext ? { ciContext } : {}),
+    ...(config.repoAccessToken ? { repoAccessToken: config.repoAccessToken } : {}),
   };
 
   // Resolved before the DAST branch below, which owns scanApiRequest.scanContext —
@@ -129,7 +130,19 @@ function reportQueuedOnly(scanInfo, repoUrl, branch) {
   setOutputs({
     scanTargetIds: scanInfo.map((entry) => entry.scanTargetId),
     totals: { ...EMPTY_SUMMARY },
-    outcomes: scanInfo.map((entry) => ({ ...entry, status: SCAN_STATUS.PENDING })),
+    // Same field set as a waited-for outcome (see wait-for-scans.js), with neutral
+    // placeholders for what queuing alone cannot know yet — so resultsJson has one
+    // stable schema whether or not waitForCompletion was set, instead of a shorter
+    // object in queue-only mode that a downstream consumer would have to special-case.
+    outcomes: scanInfo.map((entry) => ({
+      ...entry,
+      status: SCAN_STATUS.PENDING,
+      percent: 0,
+      message: "Queued — not waiting for completion",
+      scanId: null,
+      summary: { ...EMPTY_SUMMARY },
+      isSummaryAvailable: false,
+    })),
     scanStatus: SCAN_STATUS.PENDING,
     repoUrl,
     branch,

@@ -86,11 +86,36 @@ if either is missing.
 | vigilnzApiKey | Your Vigilnz API key. Always read from a GitHub secret (`${{ secrets.VIGILNZ_API_KEY }}`), never hardcoded in the workflow. |
 | scanTypes     | Comma-separated, case-insensitive list of scan types to run this step. Accepted values: `sca`, `sbom`, `sast`, `secret` (or `secret scan`), `iac` (or `iac scan`), `dast`, `container` (or `container scan`). Example: `"sca,sast,secret"`. |
 | projectName   | Optional. A name shown for this run in the Vigilnz UI, so you can tell which project/service a scan belongs to. When omitted, the scan is still created, just unlabeled. |
+| repoAccessToken | Optional. A fallback access token for scanning a **private** repository (e.g. `${{ secrets.GITHUB_TOKEN }}` or a PAT with read access). See [Scanning a private repository](#scanning-a-private-repository) below. |
 
 The scanned **branch** needs no input — the action reads it from the workflow context
 (`GITHUB_HEAD_REF` on `pull_request` events, otherwise `GITHUB_REF_NAME`) and sends it with the
 scan so results are grouped under the right branch in the Vigilnz UI, and so it is returned in
 this run's own outputs — see [Outputs](#outputs).
+
+### Scanning a private repository
+
+For a private repository, Vigilnz needs a credential to read its metadata. The action tries,
+in order:
+
+1. **A GitHub integration already connected to your Vigilnz account** that covers this repo —
+   nothing to configure in the workflow when this is set up.
+2. **`repoAccessToken`**, used only as a fallback when no such integration is found. The
+   repository's own `${{ secrets.GITHUB_TOKEN }}` (already scoped to this repo, auto-expiring)
+   works for same-repo scans; use a personal access token with read access instead if you need
+   to scan a different private repository.
+
+```yaml
+      - uses: vigilnz/vigilnz-scan-action@v1
+        with:
+          vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
+          scanTypes: "sca,sast,secret"
+          repoAccessToken: ${{ secrets.GITHUB_TOKEN }}
+```
+
+`repoAccessToken` is read as a GitHub Actions secret, masked in the workflow log, and used only
+in-memory to resolve this one scan request — Vigilnz never stores it. A public repository, or a
+private one already covered by a connected integration, needs no `repoAccessToken` at all.
 
 ### Monorepo Path Scoping
 
@@ -157,7 +182,21 @@ counts are `0` unless `waitForCompletion: true` actually read the results back.
 | mediumCount    | Total medium findings across all scans                                    |
 | lowCount       | Total low findings across all scans                                       |
 | totalFindings  | Total findings across all scans                                           |
-| resultsJson    | JSON array of per-scan outcomes — each entry includes `scanTargetId`, `scanType`, `branch`, `status`, and (once `waitForCompletion` has read it back) the severity `summary` |
+| resultsJson    | JSON array of per-scan outcomes — one object per scan type queued. Same schema whether or not `waitForCompletion` was set (see table below), so a downstream step or saved artifact never has to special-case queue-only runs. |
+
+#### `resultsJson` entry fields
+
+| Field              | Description |
+|--------------------|-------------|
+| scanTargetId       | The scan target ID created for this scan type — use this to look the scan up via the Vigilnz API. |
+| scanType           | The scan type this entry is for, as sent to the API (`cve` for SCA, `sbom`, `sast`, `secret`, `iac`, `dast`, `container`). |
+| branch             | The same branch as the top-level `branch` output, repeated on every entry so a single entry is self-contained when read out of context (e.g. from a saved artifact). |
+| status             | `pending` (queue-only), `complete`, `error`, or `timed_out`. |
+| percent            | Last known progress percentage (0–100). On `error`/`timed_out`, this is however far the scan got before polling gave up — not just `0` — so you can tell "failed at the start" from "failed near the end". Always `0` in queue-only mode, since the scan hasn't started being polled. |
+| message            | Human-readable status detail from the platform (e.g. `"Scan complete"`), or this action's own explanation when polling itself failed (e.g. `"Status endpoint unreachable"`, `"Timed out waiting for scan to complete"`). In queue-only mode this is a fixed `"Queued — not waiting for completion"`. |
+| scanId             | The completed scan's own ID, used to fetch findings and build a reference to this specific scan run. `null` until the scan actually reaches `complete` (including in queue-only mode, where it is always `null`). |
+| summary            | `{ critical, high, medium, low, totalFindings }` for this scan type. All `0` unless this entry's `isSummaryAvailable` is `true`. |
+| isSummaryAvailable | `true` once the severity counts above were actually read from the platform. `false` in queue-only mode, or when reading the summary for a completed scan itself failed — this is NOT the same as "zero findings", so always check it before trusting a `0` in `summary` for an audit record. |
 
 ```yaml
 - name: Report
@@ -167,6 +206,16 @@ counts are `0` unless `waitForCompletion: true` actually read the results back.
     echo "Critical: ${{ steps.vigilnz.outputs.criticalCount }}"
     echo "High:     ${{ steps.vigilnz.outputs.highCount }}"
     echo "Total:    ${{ steps.vigilnz.outputs.totalFindings }}"
+
+- name: Save full per-scan results as a build artifact
+  if: always()
+  run: echo '${{ steps.vigilnz.outputs.resultsJson }}' > vigilnz-results.json
+
+- uses: actions/upload-artifact@v4
+  if: always()
+  with:
+    name: vigilnz-scan-results
+    path: vigilnz-results.json
 ```
 
 ### DAST Scan Inputs

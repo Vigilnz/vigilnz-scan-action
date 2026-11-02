@@ -32269,6 +32269,7 @@ function buildScanRequest(config, repoUrl, branch, ciContext) {
     projectName: config.projectName || "",
     ...(branch ? { branch } : {}),
     ...(ciContext ? { ciContext } : {}),
+    ...(config.repoAccessToken ? { repoAccessToken: config.repoAccessToken } : {}),
   };
 
   // Resolved before the DAST branch below, which owns scanApiRequest.scanContext —
@@ -32308,7 +32309,19 @@ function reportQueuedOnly(scanInfo, repoUrl, branch) {
   setOutputs({
     scanTargetIds: scanInfo.map((entry) => entry.scanTargetId),
     totals: { ...EMPTY_SUMMARY },
-    outcomes: scanInfo.map((entry) => ({ ...entry, status: SCAN_STATUS.PENDING })),
+    // Same field set as a waited-for outcome (see wait-for-scans.js), with neutral
+    // placeholders for what queuing alone cannot know yet — so resultsJson has one
+    // stable schema whether or not waitForCompletion was set, instead of a shorter
+    // object in queue-only mode that a downstream consumer would have to special-case.
+    outcomes: scanInfo.map((entry) => ({
+      ...entry,
+      status: SCAN_STATUS.PENDING,
+      percent: 0,
+      message: "Queued — not waiting for completion",
+      scanId: null,
+      summary: { ...EMPTY_SUMMARY },
+      isSummaryAvailable: false,
+    })),
     scanStatus: SCAN_STATUS.PENDING,
     repoUrl,
     branch,
@@ -32644,11 +32657,15 @@ function readInputs() {
   const apiKey = action.getInput("vigilnzApiKey");
   if (apiKey) action.setSecret(apiKey);
 
+  const repoAccessToken = action.getInput("repoAccessToken");
+  if (repoAccessToken) action.setSecret(repoAccessToken);
+
   const environment = action.getInput("environment");
   const scanTypes = action.getInput("scanTypes");
 
   return {
     apiKey,
+    repoAccessToken,
     scanTypes,
     scanTypesInList: normalizeScanTypes(scanTypes),
     projectName: action.getInput("projectName"),
@@ -33194,14 +33211,17 @@ const EMPTY_SUMMARY = Object.freeze({
  * @param {{scanTargetId: string, scanType: string, branch?: string}} target - Any extra
  *   fields (e.g. `branch`) are carried through to the returned outcome untouched, so
  *   callers can attach per-target metadata without this function needing to know about it.
- * @returns {Promise<{scanTargetId: string, scanType: string, status: string, message: string, scanId: string|null}>}
+ * @returns {Promise<{scanTargetId: string, scanType: string, status: string, percent: number, message: string, scanId: string|null}>}
+ *   `percent` is always present — on the error/timeout paths it is the last value actually
+ *   observed before polling gave up (0 if none was ever read), so a record always shows how
+ *   far the scan got, not just that it failed.
  */
 async function pollScanTarget(ctx, target) {
   const { baseUrl, token, deadlineMs, pollIntervalMs } = ctx;
   const { scanTargetId, scanType } = target;
 
   let consecutiveErrors = 0;
-  let lastPercent = -1;
+  let lastPercent = 0;
 
   while (Date.now() < deadlineMs) {
     try {
@@ -33226,6 +33246,7 @@ async function pollScanTarget(ctx, target) {
         return {
           ...target,
           status: SCAN_STATUS.ERROR,
+          percent: lastPercent,
           message: "Status endpoint unreachable",
           scanId: null,
         };
@@ -33238,6 +33259,7 @@ async function pollScanTarget(ctx, target) {
   return {
     ...target,
     status: SCAN_STATUS.TIMED_OUT,
+    percent: lastPercent,
     message: "Timed out waiting for scan to complete",
     scanId: null,
   };
