@@ -120,17 +120,19 @@ function buildScanRequest(config, repoUrl, branch, ciContext) {
 /**
  * Publish outputs for a queue-only run (waitForCompletion disabled).
  *
- * @param {Array<{scanTargetId: string, scanType: string}>} scanInfo
+ * @param {Array<{scanTargetId: string, scanType: string, branch: string}>} scanInfo
  * @param {string} repoUrl
+ * @param {string} branch
  * @returns {void}
  */
-function reportQueuedOnly(scanInfo, repoUrl) {
+function reportQueuedOnly(scanInfo, repoUrl, branch) {
   setOutputs({
     scanTargetIds: scanInfo.map((entry) => entry.scanTargetId),
     totals: { ...EMPTY_SUMMARY },
     outcomes: scanInfo.map((entry) => ({ ...entry, status: SCAN_STATUS.PENDING })),
     scanStatus: SCAN_STATUS.PENDING,
     repoUrl,
+    branch,
   });
 
   action.info(
@@ -194,17 +196,26 @@ function evaluateGates(config, { outcomes, totals }) {
 /**
  * Queue the scans, then either return immediately or wait for results and gate the job.
  *
+ * Scans run in parallel, not one after another: every queued scan target is polled
+ * concurrently in waitForScans (Promise.all over scanInfo), so the wait time for a
+ * multi-scan run is bounded by the SLOWEST scan type, not the sum of all of them.
+ *
  * @param {object} config
  * @param {object} scanApiRequest
  * @param {string} repoUrl
+ * @param {string} branch - Branch this run scanned; threaded into every outcome and
+ *   the `branch` output so a downstream step can tell which branch's scans these are.
  * @returns {Promise<void>}
  */
-async function runScan(config, scanApiRequest, repoUrl) {
+async function runScan(config, scanApiRequest, repoUrl, branch) {
   const token = await authenticate(config.baseUrl, config.apiKey);
   action.info("Access token fetched successfully.");
 
   const data = await submitScan(config.baseUrl, token, scanApiRequest);
-  const scanInfo = Array.isArray(data?.scanInfo) ? data.scanInfo : [];
+  const scanInfo = (Array.isArray(data?.scanInfo) ? data.scanInfo : []).map((entry) => ({
+    ...entry,
+    branch,
+  }));
 
   if (Array.isArray(data?.errors) && data.errors.length > 0) {
     for (const err of data.errors) {
@@ -220,7 +231,7 @@ async function runScan(config, scanApiRequest, repoUrl) {
   action.info(`Scans queued: ${scanInfo.map((e) => e.scanType).join(", ")}`);
 
   if (!config.shouldWaitForCompletion) {
-    reportQueuedOnly(scanInfo, repoUrl);
+    reportQueuedOnly(scanInfo, repoUrl, branch);
     return;
   }
 
@@ -233,8 +244,9 @@ async function runScan(config, scanApiRequest, repoUrl) {
     outcomes: result.outcomes,
     scanStatus,
     repoUrl,
+    branch,
   });
-  await writeJobSummary({ outcomes: result.outcomes, totals: result.totals, repoUrl });
+  await writeJobSummary({ outcomes: result.outcomes, totals: result.totals, repoUrl, branch });
 }
 
 /**
@@ -263,7 +275,7 @@ async function runVigilnzScan() {
     const scanApiRequest = buildScanRequest(config, repoUrl, branch, ciContext);
     if (!scanApiRequest) return;
 
-    await runScan(config, scanApiRequest, repoUrl);
+    await runScan(config, scanApiRequest, repoUrl, branch);
   } catch (error) {
     action.setFailed(`Scan failed: ${error.message}`);
   }

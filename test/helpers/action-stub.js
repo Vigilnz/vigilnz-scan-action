@@ -23,12 +23,13 @@ const originals = {
 /**
  * Replace the logging / failure surface with collectors.
  *
- * @returns {{failures: string[], warnings: string[], infos: string[], restore: () => void}}
+ * @returns {{failures: string[], warnings: string[], infos: string[], outputs: Record<string, string>, restore: () => void}}
  */
 function stubAction() {
   const failures = [];
   const warnings = [];
   const infos = [];
+  const outputs = {};
 
   action.setFailed = (message) => {
     failures.push(String(message));
@@ -40,12 +41,15 @@ function stubAction() {
     infos.push(String(message));
   };
   action.setSecret = () => {};
-  action.setOutput = () => {};
+  action.setOutput = (name, value) => {
+    outputs[name] = value;
+  };
 
   return {
     failures,
     warnings,
     infos,
+    outputs,
     restore() {
       Object.assign(action, originals);
     },

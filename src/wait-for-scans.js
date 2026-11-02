@@ -33,7 +33,9 @@ const EMPTY_SUMMARY = Object.freeze({
  * Poll one scan target until it reaches a terminal state or the deadline passes.
  *
  * @param {{baseUrl: string, token: string, deadlineMs: number, pollIntervalMs: number}} ctx
- * @param {{scanTargetId: string, scanType: string}} target
+ * @param {{scanTargetId: string, scanType: string, branch?: string}} target - Any extra
+ *   fields (e.g. `branch`) are carried through to the returned outcome untouched, so
+ *   callers can attach per-target metadata without this function needing to know about it.
  * @returns {Promise<{scanTargetId: string, scanType: string, status: string, message: string, scanId: string|null}>}
  */
 async function pollScanTarget(ctx, target) {
@@ -54,7 +56,7 @@ async function pollScanTarget(ctx, target) {
       }
 
       if (TERMINAL_SCAN_STATUSES.includes(progress.status)) {
-        return { scanTargetId, scanType, ...progress };
+        return { ...target, ...progress };
       }
     } catch (error) {
       consecutiveErrors += 1;
@@ -64,8 +66,7 @@ async function pollScanTarget(ctx, target) {
       );
       if (consecutiveErrors >= MAX_CONSECUTIVE_POLL_ERRORS) {
         return {
-          scanTargetId,
-          scanType,
+          ...target,
           status: SCAN_STATUS.ERROR,
           message: "Status endpoint unreachable",
           scanId: null,
@@ -77,8 +78,7 @@ async function pollScanTarget(ctx, target) {
   }
 
   return {
-    scanTargetId,
-    scanType,
+    ...target,
     status: SCAN_STATUS.TIMED_OUT,
     message: "Timed out waiting for scan to complete",
     scanId: null,
@@ -149,8 +149,14 @@ function countAtOrAboveSeverity(totals, failOnSeverity) {
 /**
  * Wait for every queued scan to finish, then return per-scan outcomes and totals.
  *
+ * All scan targets are polled CONCURRENTLY (Promise.all below) — a multi-scan run
+ * (e.g. SCA + SAST + Secret) does not wait for one scan type to finish before
+ * starting the next; every queued scan is already running in parallel on the
+ * backend, and this just waits on all of them at once. Total wait time is bounded
+ * by the slowest scan type, not the sum of every scan type's duration.
+ *
  * @param {{baseUrl: string, token: string, timeoutMinutes: number, pollIntervalSeconds: number}} config
- * @param {Array<{scanTargetId: string, scanType: string}>} scanInfo
+ * @param {Array<{scanTargetId: string, scanType: string, branch?: string}>} scanInfo
  * @returns {Promise<{outcomes: object[], totals: object}>}
  */
 async function waitForScans(config, scanInfo) {

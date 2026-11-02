@@ -32299,17 +32299,19 @@ function buildScanRequest(config, repoUrl, branch, ciContext) {
 /**
  * Publish outputs for a queue-only run (waitForCompletion disabled).
  *
- * @param {Array<{scanTargetId: string, scanType: string}>} scanInfo
+ * @param {Array<{scanTargetId: string, scanType: string, branch: string}>} scanInfo
  * @param {string} repoUrl
+ * @param {string} branch
  * @returns {void}
  */
-function reportQueuedOnly(scanInfo, repoUrl) {
+function reportQueuedOnly(scanInfo, repoUrl, branch) {
   setOutputs({
     scanTargetIds: scanInfo.map((entry) => entry.scanTargetId),
     totals: { ...EMPTY_SUMMARY },
     outcomes: scanInfo.map((entry) => ({ ...entry, status: SCAN_STATUS.PENDING })),
     scanStatus: SCAN_STATUS.PENDING,
     repoUrl,
+    branch,
   });
 
   action.info(
@@ -32373,17 +32375,26 @@ function evaluateGates(config, { outcomes, totals }) {
 /**
  * Queue the scans, then either return immediately or wait for results and gate the job.
  *
+ * Scans run in parallel, not one after another: every queued scan target is polled
+ * concurrently in waitForScans (Promise.all over scanInfo), so the wait time for a
+ * multi-scan run is bounded by the SLOWEST scan type, not the sum of all of them.
+ *
  * @param {object} config
  * @param {object} scanApiRequest
  * @param {string} repoUrl
+ * @param {string} branch - Branch this run scanned; threaded into every outcome and
+ *   the `branch` output so a downstream step can tell which branch's scans these are.
  * @returns {Promise<void>}
  */
-async function runScan(config, scanApiRequest, repoUrl) {
+async function runScan(config, scanApiRequest, repoUrl, branch) {
   const token = await authenticate(config.baseUrl, config.apiKey);
   action.info("Access token fetched successfully.");
 
   const data = await submitScan(config.baseUrl, token, scanApiRequest);
-  const scanInfo = Array.isArray(data?.scanInfo) ? data.scanInfo : [];
+  const scanInfo = (Array.isArray(data?.scanInfo) ? data.scanInfo : []).map((entry) => ({
+    ...entry,
+    branch,
+  }));
 
   if (Array.isArray(data?.errors) && data.errors.length > 0) {
     for (const err of data.errors) {
@@ -32399,7 +32410,7 @@ async function runScan(config, scanApiRequest, repoUrl) {
   action.info(`Scans queued: ${scanInfo.map((e) => e.scanType).join(", ")}`);
 
   if (!config.shouldWaitForCompletion) {
-    reportQueuedOnly(scanInfo, repoUrl);
+    reportQueuedOnly(scanInfo, repoUrl, branch);
     return;
   }
 
@@ -32412,8 +32423,9 @@ async function runScan(config, scanApiRequest, repoUrl) {
     outcomes: result.outcomes,
     scanStatus,
     repoUrl,
+    branch,
   });
-  await writeJobSummary({ outcomes: result.outcomes, totals: result.totals, repoUrl });
+  await writeJobSummary({ outcomes: result.outcomes, totals: result.totals, repoUrl, branch });
 }
 
 /**
@@ -32442,7 +32454,7 @@ async function runVigilnzScan() {
     const scanApiRequest = buildScanRequest(config, repoUrl, branch, ciContext);
     if (!scanApiRequest) return;
 
-    await runScan(config, scanApiRequest, repoUrl);
+    await runScan(config, scanApiRequest, repoUrl, branch);
   } catch (error) {
     action.setFailed(`Scan failed: ${error.message}`);
   }
@@ -32494,7 +32506,8 @@ const {
  * Resolve the Vigilnz API base URL for the requested environment.
  *
  * Internal input: consumers do not set this, so an empty or unrecognised value
- * resolves to production.
+ * resolves to production. There is no user-configurable override — every run
+ * talks to one of these three fixed, first-party origins.
  *
  * @param {string} [env] - "dev" | "development" | "demo" | "prod" | "production"
  * @returns {string} Base URL (defaults to production when unrecognised)
@@ -32505,6 +32518,9 @@ function getBaseUrl(env) {
     case "development":
       return DEV_DEFAULT_URL;
     case "demo":
+      if (!DEMO_DEFAULT_URL) {
+        throw new Error("No public middleware URL is configured for the demo environment.");
+      }
       return DEMO_DEFAULT_URL;
     case "prod":
     case "production":
@@ -32843,13 +32859,17 @@ const STATUS_ICON = Object.freeze({
  * Set every action output. Always called, including in queue-only mode, so downstream
  * steps can rely on the outputs existing.
  *
- * @param {{scanTargetIds: string[], totals: object, outcomes: object[], scanStatus: string, repoUrl: string}} report
+ * @param {{scanTargetIds: string[], totals: object, outcomes: object[], scanStatus: string, repoUrl: string, branch?: string}} report
  * @returns {void}
  */
-function setOutputs({ scanTargetIds, totals, outcomes, scanStatus, repoUrl }) {
+function setOutputs({ scanTargetIds, totals, outcomes, scanStatus, repoUrl, branch }) {
   action.setOutput("scanTargetIds", scanTargetIds.join(","));
   action.setOutput("scanStatus", scanStatus);
   action.setOutput("repoUrl", repoUrl);
+  // The branch these scans were triggered for — same value on every outcome below,
+  // since one workflow run scans exactly one branch; exposed as its own output too
+  // so a downstream step can read it without parsing resultsJson.
+  action.setOutput("branch", branch || "");
   action.setOutput("criticalCount", String(totals.critical));
   action.setOutput("highCount", String(totals.high));
   action.setOutput("mediumCount", String(totals.medium));
@@ -32861,10 +32881,10 @@ function setOutputs({ scanTargetIds, totals, outcomes, scanStatus, repoUrl }) {
 /**
  * Render the per-scan result table into the GitHub job summary.
  *
- * @param {{outcomes: object[], totals: object, repoUrl: string}} report
+ * @param {{outcomes: object[], totals: object, repoUrl: string, branch?: string}} report
  * @returns {Promise<void>}
  */
-async function writeJobSummary({ outcomes, totals, repoUrl }) {
+async function writeJobSummary({ outcomes, totals, repoUrl, branch }) {
   try {
     const rows = outcomes.map((outcome) => [
       `${STATUS_ICON[outcome.status] || "⚪"} ${outcome.scanType}`,
@@ -32879,6 +32899,7 @@ async function writeJobSummary({ outcomes, totals, repoUrl }) {
     await action.summary
       .addHeading("Vigilnz Security Scan", 2)
       .addRaw(`Repository: ${repoUrl}`, true)
+      .addRaw(`Branch: ${branch || "(not resolved — platform used the repo default)"}`, true)
       .addTable([
         ["Scan", "Status", "Critical", "High", "Medium", "Low", "Total"].map((header) => ({
           data: header,
@@ -33170,7 +33191,9 @@ const EMPTY_SUMMARY = Object.freeze({
  * Poll one scan target until it reaches a terminal state or the deadline passes.
  *
  * @param {{baseUrl: string, token: string, deadlineMs: number, pollIntervalMs: number}} ctx
- * @param {{scanTargetId: string, scanType: string}} target
+ * @param {{scanTargetId: string, scanType: string, branch?: string}} target - Any extra
+ *   fields (e.g. `branch`) are carried through to the returned outcome untouched, so
+ *   callers can attach per-target metadata without this function needing to know about it.
  * @returns {Promise<{scanTargetId: string, scanType: string, status: string, message: string, scanId: string|null}>}
  */
 async function pollScanTarget(ctx, target) {
@@ -33191,7 +33214,7 @@ async function pollScanTarget(ctx, target) {
       }
 
       if (TERMINAL_SCAN_STATUSES.includes(progress.status)) {
-        return { scanTargetId, scanType, ...progress };
+        return { ...target, ...progress };
       }
     } catch (error) {
       consecutiveErrors += 1;
@@ -33201,8 +33224,7 @@ async function pollScanTarget(ctx, target) {
       );
       if (consecutiveErrors >= MAX_CONSECUTIVE_POLL_ERRORS) {
         return {
-          scanTargetId,
-          scanType,
+          ...target,
           status: SCAN_STATUS.ERROR,
           message: "Status endpoint unreachable",
           scanId: null,
@@ -33214,8 +33236,7 @@ async function pollScanTarget(ctx, target) {
   }
 
   return {
-    scanTargetId,
-    scanType,
+    ...target,
     status: SCAN_STATUS.TIMED_OUT,
     message: "Timed out waiting for scan to complete",
     scanId: null,
@@ -33286,8 +33307,14 @@ function countAtOrAboveSeverity(totals, failOnSeverity) {
 /**
  * Wait for every queued scan to finish, then return per-scan outcomes and totals.
  *
+ * All scan targets are polled CONCURRENTLY (Promise.all below) — a multi-scan run
+ * (e.g. SCA + SAST + Secret) does not wait for one scan type to finish before
+ * starting the next; every queued scan is already running in parallel on the
+ * backend, and this just waits on all of them at once. Total wait time is bounded
+ * by the slowest scan type, not the sum of every scan type's duration.
+ *
  * @param {{baseUrl: string, token: string, timeoutMinutes: number, pollIntervalSeconds: number}} config
- * @param {Array<{scanTargetId: string, scanType: string}>} scanInfo
+ * @param {Array<{scanTargetId: string, scanType: string, branch?: string}>} scanInfo
  * @returns {Promise<{outcomes: object[], totals: object}>}
  */
 async function waitForScans(config, scanInfo) {

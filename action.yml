@@ -6,7 +6,7 @@ inputs:
     description: 'Vigilnz API token'
     required: true
   scanTypes:
-    description: 'Comma-separated list of scans (sca,sbom,sast)'
+    description: 'Comma-separated, case-insensitive list of scans to run: sca, sbom, sast, secret (or "secret scan"), iac (or "iac scan"), dast, container (or "container scan"). Example: "sca,sast,secret"'
     required: true
   projectName:
     description: 'Project name for the scan'
@@ -59,7 +59,7 @@ inputs:
     description: 'Container image name (e.g., nginx:latest)'
     required: false
   containerProvider:
-    description: 'Registry provider (dockerhub, aws-ecr, github, gitlab, google, azure, quay)'
+    description: 'Registry the image lives in: dockerhub (Docker Hub), aws-ecr (Amazon ECR), github (GitHub Container Registry / GHCR), gitlab (GitLab Container Registry), google (Google Container Registry / Artifact Registry), azure (Azure Container Registry / ACR), quay (Quay.io)'
     required: false
   containerRegistryType:
     description: 'Registry type (public, private, ecr-public, ecr-private, gcr, artifact, mcr)'
@@ -87,6 +87,8 @@ outputs:
     description: 'Aggregate status: pending (queue-only), complete, error or timed_out'
   repoUrl:
     description: 'Repository URL that was scanned'
+  branch:
+    description: 'Branch these scans were triggered for (empty if it could not be resolved from the workflow context)'
   criticalCount:
     description: 'Total critical findings across all scans (0 unless waitForCompletion is true)'
   highCount:

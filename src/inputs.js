@@ -27,7 +27,8 @@ const {
  * Resolve the Vigilnz API base URL for the requested environment.
  *
  * Internal input: consumers do not set this, so an empty or unrecognised value
- * resolves to production.
+ * resolves to production. There is no user-configurable override — every run
+ * talks to one of these three fixed, first-party origins.
  *
  * @param {string} [env] - "dev" | "development" | "demo" | "prod" | "production"
  * @returns {string} Base URL (defaults to production when unrecognised)
@@ -38,6 +39,9 @@ function getBaseUrl(env) {
     case "development":
       return DEV_DEFAULT_URL;
     case "demo":
+      if (!DEMO_DEFAULT_URL) {
+        throw new Error("No public middleware URL is configured for the demo environment.");
+      }
       return DEMO_DEFAULT_URL;
     case "prod":
     case "production":
