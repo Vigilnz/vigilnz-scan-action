@@ -1,7 +1,8 @@
 # <img src="images/vigilnz.svg" width="40" height="40" align="absmiddle" /> Vigilnz GitHub Action
 
 ## Overview
-The **Vigilnz Security Scan Action** helps developers automatically check their applications and repositories for vulnerabilities during CI/CD.
+The **Vigilnz Security Scan Action** checks your applications and repositories for vulnerabilities during CI/CD.
+
 It supports multiple scan types:
 - **SCA** → Software Composition Analysis
 - **SBOM** → Software Bill of Materials generation
@@ -18,34 +19,27 @@ This action makes it easy to integrate Vigilnz scanning into your GitHub workflo
 
 ## Usage
 
-To use the Vigilnz Security Scan Action, follow these steps in order:
-
-1. [Generate API Key from Vigilnz Security](#api-key-generation).
-2. [Store the API key securely in GitHub Secrets](#store-the-api-key-securely-in-github-secrets).
-3. [Add the action to your GitHub workflow](#add-the-action-to-your-github-workflow).
+1. [Generate an API key](#api-key-generation).
+2. [Store it in GitHub Secrets](#store-the-api-key-securely-in-github-secrets).
+3. [Add the action to your workflow](#add-the-action-to-your-github-workflow).
 
 ## API Key Generation
 
-### To generate your Vigilnz API Key:
-
-1. Login to the <a href="https://vigilnz.com/" target="_blank">Vigilnz</a> application.
-2. Navigate to **Settings → API Keys**.
-3. Click **Generate New Key** or **View API Key** (if it exists).
-4. Copy the API Key and store it securely.
+1. Log in to <a href="https://vigilnz.com/" target="_blank">Vigilnz</a>.
+2. Go to **Settings → API Keys**.
+3. Click **Generate New Key** (or **View API Key** if one exists).
+4. Copy it and store it securely.
 
 ![API Key generation screen](images/vigilnz_api.png)
 
-This key authenticates the action as your Vigilnz account — it carries whatever scan
-permissions and plan limits your account already has. It is not scoped per-repository;
-treat it the same as any other account credential and never commit it to the repository.
+This key authenticates the action as your Vigilnz account. Treat it like any other
+credential — store it in GitHub Secrets, never hardcode it in the workflow.
 
 ## Store the API key securely in GitHub Secrets
 
-1. Go to your repository **Settings → Secrets and variables → Actions**.
-2. Click **New repository secret**.
-3. Add:
-  - **Name**: VIGILNZ_API_KEY
-  - **Value**: your Vigilnz API key
+1. Repository **Settings → Secrets and variables → Actions**.
+2. **New repository secret**.
+3. Name: `VIGILNZ_API_KEY`, Value: your API key.
 
 ![Github Secrets](images/github_secret.png)
 
@@ -69,64 +63,58 @@ jobs:
         uses: vigilnz/vigilnz-scan-action@v1
         with:
           vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
-          scanTypes: "SCA,SBOM,SAST,SECRET SCAN,IAC SCAN"
+          scanTypes: "sca,sbom,sast,secret,iac"
           projectName: "my-project"
-
 ```
 
 ## Inputs
 
 ### Core inputs
 
-`vigilnzApiKey` and `scanTypes` must be set on every run — the action fails immediately
-if either is missing.
+`vigilnzApiKey` and `scanTypes` are required on every run.
 
 | Name          | Accepted values / purpose |
 |---------------|----------------------------|
-| vigilnzApiKey | Your Vigilnz API key. Always read from a GitHub secret (`${{ secrets.VIGILNZ_API_KEY }}`), never hardcoded in the workflow. |
-| scanTypes     | Comma-separated, case-insensitive list of scan types to run this step. Accepted values: `sca`, `sbom`, `sast`, `secret` (or `secret scan`), `iac` (or `iac scan`), `dast`, `container` (or `container scan`). Example: `"sca,sast,secret"`. |
-| projectName   | Optional. A name shown for this run in the Vigilnz UI, so you can tell which project/service a scan belongs to. When omitted, the scan is still created, just unlabeled. |
-| repoAccessToken | Optional. A fallback access token for scanning a **private** repository (e.g. `${{ secrets.GITHUB_TOKEN }}` or a PAT with read access). See [Scanning a private repository](#scanning-a-private-repository) below. |
+| vigilnzApiKey | Your Vigilnz API key. Read from a GitHub secret. |
+| scanTypes     | Comma-separated, case-insensitive: `sca`, `sbom`, `sast`, `secret`, `iac`, `dast`, `container`. Example: `"sca,sast,secret"`. |
+| projectName   | Optional label shown for this run in the Vigilnz UI. |
+| repoAccessToken | Optional fallback token for scanning a **private** repo — see [Scanning a private repository](#scanning-a-private-repository). |
 
 The scanned **branch** needs no input — the action reads it from the workflow context
-(`GITHUB_HEAD_REF` on `pull_request` events, otherwise `GITHUB_REF_NAME`) and sends it with the
-scan so results are grouped under the right branch in the Vigilnz UI, and so it is returned in
-this run's own outputs — see [Outputs](#outputs).
+(`GITHUB_HEAD_REF` on `pull_request`, otherwise `GITHUB_REF_NAME`) and returns it in the
+run's own [Outputs](#outputs).
 
 ### Scanning a private repository
 
-For a private repository, Vigilnz needs a credential to read its metadata. The action tries,
-in order:
+**Recommended:** connect your GitHub account/org to Vigilnz once (an integration in your
+Vigilnz account settings). Every private repo it covers then scans with no extra input —
+nothing to add to the workflow.
 
-1. **A GitHub integration already connected to your Vigilnz account** that covers this repo —
-   nothing to configure in the workflow when this is set up.
-2. **`repoAccessToken`**, used only as a fallback when no such integration is found. The
-   repository's own `${{ secrets.GITHUB_TOKEN }}` (already scoped to this repo, auto-expiring)
-   works for same-repo scans; use a personal access token with read access instead if you need
-   to scan a different private repository.
+**Fallback:** if no integration covers this repo, pass `repoAccessToken` instead:
 
 ```yaml
-      - uses: vigilnz/vigilnz-scan-action@v1
-        with:
-          vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
-          scanTypes: "sca,sast,secret"
-          repoAccessToken: ${{ secrets.GITHUB_TOKEN }}
+- uses: vigilnz/vigilnz-scan-action@v1
+  with:
+    vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
+    scanTypes: "sca,sast,secret"
+    repoAccessToken: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-`repoAccessToken` is read as a GitHub Actions secret, masked in the workflow log, and used only
-in-memory to resolve this one scan request — Vigilnz never stores it. A public repository, or a
-private one already covered by a connected integration, needs no `repoAccessToken` at all.
+Use the repo's own `${{ secrets.GITHUB_TOKEN }}` for same-repo scans, or a PAT with read
+access for a different private repo. It's masked in logs and used only for this one scan
+request — Vigilnz never stores it. A public repo, or one already covered by a connected
+integration, needs neither.
 
 ### Monorepo Path Scoping
 
-Both inputs below are optional. By default the whole repository is scanned. In a monorepo you
-usually want a pipeline to scan only the service it builds. Both inputs take a comma-separated
-list of paths **relative to the repository root**.
+Both optional. By default the whole repository is scanned. In a monorepo, scope a pipeline
+to just the service it builds — both take a comma-separated list of paths **relative to the
+repository root**.
 
 | Name         | Accepted values / purpose |
 |--------------|----------------------------|
-| includePaths | Comma-separated repo-relative paths. Only these paths are scanned. Leaving it empty (the default) scans the whole repository. |
-| excludePaths | Comma-separated repo-relative paths. These are skipped. Applied *after* `includePaths`, so an exclusion always wins over an inclusion that would otherwise cover it. |
+| includePaths | Only these paths are scanned. Empty (default) scans everything. |
+| excludePaths | Skipped after `includePaths` is applied — an exclusion always wins. |
 
 ```yaml
 - name: Scan only the backend service
@@ -138,65 +126,61 @@ list of paths **relative to the repository root**.
     excludePaths: "backend/API/tests/"
 ```
 
-A path matches a file when it equals the path or is one of its parent directories, on segment
-boundaries — so `backend` matches `backend/api.js` but never `backend-legacy/api.js`. Trailing
-slashes are optional. Absolute paths and any path containing `..` are rejected and fail the
-step before a scan is queued (up to 32 entries per list, 512 characters each).
+A path matches a file when it equals it or is a parent directory, on segment boundaries —
+`backend` matches `backend/api.js`, never `backend-legacy/api.js`. Absolute paths or any `..`
+are rejected (up to 32 entries per list, 512 characters each).
 
-Applies only to the scan types that actually read repository files (`sca`, `sbom`, `sast`,
-`iac`, `secret`). `dast` targets a URL and `container` targets an image, so both ignore these
-inputs; a run consisting only of those types logs a warning and scans as normal.
+Only applies to scan types that read repository files (`sca`, `sbom`, `sast`, `iac`,
+`secret`). `dast` (targets a URL) and `container` (targets an image) ignore these inputs.
 
-> **SCA note:** an `sca` scope must contain a dependency manifest or lock file. Scoping to a
-> directory that has neither — for example a workspace member whose lock file lives at the
-> repository root — reports no dependencies. The worker log records
-> `path scope matched 0 dependency manifests` when this happens.
+> **SCA note:** a scoped directory must contain a dependency manifest or lock file, or it
+> reports no dependencies.
 
 ### Wait & Gating Inputs
 
-All inputs below are optional. By default the action **queues** the scans and finishes
-immediately — it does not wait for results. Set `waitForCompletion: true` to block the job
-until every scan finishes, read the findings back, and optionally fail the build on severity.
+All optional. By default the action **queues** the scans and exits immediately — it does
+not wait. Set `waitForCompletion: true` to block until every scan finishes and (optionally)
+fail the build on severity.
 
 | Name                | Accepted values / purpose |
 |---------------------|----------------------------|
 | waitForCompletion   | `true` or `false`. Default `false` (queue and exit immediately). Set `true` to block the job until every queued scan reaches a terminal state (`complete`, `error`, or `timed_out`). |
-| timeoutMinutes      | Whole number, clamped to 1–360. Default `30`. Maximum minutes to wait when `waitForCompletion: true`. Only meaningful together with `waitForCompletion`. |
-| pollIntervalSeconds | Whole number, clamped to 5–300. Default `15`. Seconds between scan-status polls. Only meaningful together with `waitForCompletion`. |
-| failOnSeverity      | One of `critical`, `high`, `medium`, `low`, `none`. Default `none` (never fails on findings). Fails the job when findings exist at or above this severity. Requires `waitForCompletion: true` — ignored otherwise. |
-| failOnScanError     | `true` or `false`. Default `true`. Fails the job when a scan itself errors or times out. Only applies when `waitForCompletion: true`. |
+| timeoutMinutes      | 1–360, default `30`. Max minutes to wait. Needs `waitForCompletion`. |
+| pollIntervalSeconds | 5–300, default `15`. Seconds between status polls. Needs `waitForCompletion`. |
+| failOnSeverity      | `critical`/`high`/`medium`/`low`/`none`, default `none`. Fail when findings at or above this severity exist. Needs `waitForCompletion`. |
+| failOnScanError     | `true`/`false`, default `true`. Fail when a scan errors or times out. Only applies when `waitForCompletion: true`. |
 
 ### Outputs
 
-Outputs are always set, including in queue-only mode (`waitForCompletion: false`). Severity
-counts are `0` unless `waitForCompletion: true` actually read the results back.
+Always set, including in queue-only mode. Severity counts are `0` unless
+`waitForCompletion: true` actually read the results back.
 
-| Name           | Description                                                             |
-|----------------|---------------------------------------------------------------------------|
-| scanTargetIds  | Comma-separated scan target IDs created by this run                       |
-| scanStatus     | `pending` (queue-only), `complete`, `error` or `timed_out`                |
-| repoUrl        | Repository URL that was scanned                                           |
-| branch         | Branch these scans were triggered for — the same branch resolution described in [Core inputs](#core-inputs) above, echoed back here so a downstream step doesn't have to re-derive it. Empty string if it could not be resolved. |
-| criticalCount  | Total critical findings across all scans                                  |
-| highCount      | Total high findings across all scans                                      |
-| mediumCount    | Total medium findings across all scans                                    |
-| lowCount       | Total low findings across all scans                                       |
-| totalFindings  | Total findings across all scans                                           |
-| resultsJson    | JSON array of per-scan outcomes — one object per scan type queued. Same schema whether or not `waitForCompletion` was set (see table below), so a downstream step or saved artifact never has to special-case queue-only runs. |
+| Name           | Description |
+|----------------|--------------|
+| scanTargetIds  | Comma-separated scan target IDs created by this run |
+| scanStatus     | `pending` (queue-only), `complete`, `error`, or `timed_out` |
+| repoUrl        | Repository URL that was scanned |
+| branch         | Branch these scans were triggered for; empty if unresolved |
+| criticalCount  | Total critical findings across all scan types |
+| highCount      | Total high findings across all scan types |
+| mediumCount    | Total medium findings across all scan types |
+| lowCount       | Total low findings across all scan types |
+| totalFindings  | Total findings across all scan types |
+| resultsJson    | JSON array, one object per scan type — same shape whether or not `waitForCompletion` was set (see below) |
 
 #### `resultsJson` entry fields
 
 | Field              | Description |
-|--------------------|-------------|
-| scanTargetId       | The scan target ID created for this scan type — use this to look the scan up via the Vigilnz API. |
-| scanType           | The scan type this entry is for, as sent to the API (`cve` for SCA, `sbom`, `sast`, `secret`, `iac`, `dast`, `container`). |
-| branch             | The same branch as the top-level `branch` output, repeated on every entry so a single entry is self-contained when read out of context (e.g. from a saved artifact). |
-| status             | `pending` (queue-only), `complete`, `error`, or `timed_out`. |
-| percent            | Last known progress percentage (0–100). On `error`/`timed_out`, this is however far the scan got before polling gave up — not just `0` — so you can tell "failed at the start" from "failed near the end". Always `0` in queue-only mode, since the scan hasn't started being polled. |
-| message            | Human-readable status detail from the platform (e.g. `"Scan complete"`), or this action's own explanation when polling itself failed (e.g. `"Status endpoint unreachable"`, `"Timed out waiting for scan to complete"`). In queue-only mode this is a fixed `"Queued — not waiting for completion"`. |
-| scanId             | The completed scan's own ID, used to fetch findings and build a reference to this specific scan run. `null` until the scan actually reaches `complete` (including in queue-only mode, where it is always `null`). |
-| summary            | `{ critical, high, medium, low, totalFindings }` for this scan type. All `0` unless this entry's `isSummaryAvailable` is `true`. |
-| isSummaryAvailable | `true` once the severity counts above were actually read from the platform. `false` in queue-only mode, or when reading the summary for a completed scan itself failed — this is NOT the same as "zero findings", so always check it before trusting a `0` in `summary` for an audit record. |
+|--------------------|--------------|
+| scanTargetId       | ID of this scan type's scan target. |
+| scanType           | `cve` (SCA), `sbom`, `sast`, `secret`, `iac`, `dast`, or `container`. |
+| branch             | Same as the top-level `branch` output, repeated so each entry is self-contained. |
+| status             | `pending`, `complete`, `error`, or `timed_out`. |
+| percent            | Progress 0–100. On `error`/`timed_out`, how far it got before giving up (not always `0`). Always `0` when queue-only. |
+| message            | Status detail from the platform, or this action's own explanation on a polling failure. |
+| scanId             | The completed scan's own ID, for fetching findings. `null` until `complete`. |
+| summary            | `{ critical, high, medium, low, totalFindings }` for this scan type. |
+| isSummaryAvailable | `true` once `summary` was actually read — a `false` means the `0`s above aren't trustworthy; don't read them as "no findings". |
 
 ```yaml
 - name: Report
@@ -204,7 +188,6 @@ counts are `0` unless `waitForCompletion: true` actually read the results back.
   run: |
     echo "Branch:   ${{ steps.vigilnz.outputs.branch }}"
     echo "Critical: ${{ steps.vigilnz.outputs.criticalCount }}"
-    echo "High:     ${{ steps.vigilnz.outputs.highCount }}"
     echo "Total:    ${{ steps.vigilnz.outputs.totalFindings }}"
 
 - name: Save full per-scan results as a build artifact
@@ -220,21 +203,19 @@ counts are `0` unless `waitForCompletion: true` actually read the results back.
 
 ### DAST Scan Inputs
 
-Both inputs below are required together, but **only when `dast` is included in `scanTypes`** —
-the step fails immediately if one is set without the other. Neither applies to any other scan
-type.
+Required together, **only when `dast` is in `scanTypes`**.
 
 | Name          | Accepted values / purpose |
 |---------------|----------------------------|
-| dastScanType  | `spider` (crawl the target and catalog pages/links only, no active attacks) or `active` (crawl, then actively probe the discovered pages for vulnerabilities). |
-| dastTargetUrl | The full URL of the already-running web application to test, e.g. `https://staging.example.com`. The app must be reachable from Vigilnz's scanning infrastructure — no GitHub secret or token is needed for a publicly reachable target; this action does not support passing authentication headers to the target itself. |
+| dastScanType  | `spider` (crawl/catalog only) or `active` (crawl + actively probe for vulnerabilities). |
+| dastTargetUrl | URL of the running app to test, e.g. `https://staging.example.com`. Must be reachable from Vigilnz's scanning infrastructure — no secret needed for a public target; this action can't send auth headers to the target itself. |
 
 #### Run a DAST scan
 
 ```yaml
 with:
   vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
-  scanTypes: "DAST"
+  scanTypes: "dast"
   dastScanType: "active"
   dastTargetUrl: "https://example.com"
   projectName: "web-application"
@@ -242,33 +223,32 @@ with:
 
 ### Container Scan Inputs
 
-All inputs below apply **only when `container` is included in `scanTypes`**. `containerImage`
-and `containerProvider` are always required together for a container scan; which of the
-remaining inputs are required depends on the registry, covered provider-by-provider below.
+Apply **only when `container` is in `scanTypes`**. `containerImage` + `containerProvider`
+are always required together; the rest depend on the registry — see each one below.
 
 | Name                  | Accepted values / purpose |
 |-----------------------|----------------------------|
-| containerImage        | Full image reference to scan, e.g. `nginx:latest` or `myorg/myapp:1.0.0`. |
-| containerProvider     | Which registry the image lives in: `dockerhub` (Docker Hub), `aws-ecr` (Amazon ECR), `github` (**GitHub Container Registry / GHCR**), `gitlab` (**GitLab Container Registry**), `google` (Google Container Registry / Artifact Registry), `azure` (Azure Container Registry / ACR), `quay` (Quay.io). |
-| containerRegistryType | Registry sub-type, only required by providers that have more than one shape — see each provider's table below for its accepted values. |
-| containerRegistryUrl  | The registry's own host/URL. Only needed for the private/self-hosted sub-types called out below (e.g. a private ECR or ACR registry, or Google Artifact Registry). |
-| containerAuthType     | `none` (no credentials — public image), `token` (a single bearer token), or `username-password`. Which of these a given provider accepts is listed in its table below. |
-| containerToken        | Access token for `containerAuthType: token`. What kind of token, and what permission it needs, differs per provider — see below. Always read from a GitHub secret. |
+| containerImage        | Image reference, e.g. `nginx:latest` or `myorg/myapp:1.0.0`. |
+| containerProvider     | `dockerhub` (Docker Hub), `aws-ecr` (Amazon ECR), `github` (**GHCR**), `gitlab` (**GitLab Container Registry**), `google` (GCR / Artifact Registry), `azure` (ACR), `quay` (Quay.io). |
+| containerRegistryType | Sub-type, required only by multi-shape providers — see below. |
+| containerRegistryUrl  | Registry host/URL, only for the private/self-hosted sub-types below. |
+| containerAuthType     | `none`, `token`, or `username-password` — which ones a provider accepts is listed below. |
+| containerToken        | Token for `containerAuthType: token`. Type/permission differs per provider, below. |
 | containerUsername     | Username for `containerAuthType: username-password`. |
-| containerPassword     | Password or access token used as the password for `containerAuthType: username-password`. Always read from a GitHub secret. |
+| containerPassword     | Password/token-as-password for `containerAuthType: username-password`. |
 
 #### Docker Hub (`dockerhub`)
 
-| Image visibility | containerAuthType | Required credentials |
+| Image visibility | containerAuthType | Credentials |
 |---|---|---|
-| Public | `none` (or omit) | None. |
-| Private | `username-password` | `containerUsername` + `containerPassword`. Use a [Docker Hub access token](https://docs.docker.com/security/for-developers/access-tokens/) as the password, not your account password. |
+| Public | `none` | None |
+| Private | `username-password` | `containerUsername` + `containerPassword` (use a Docker Hub access token, not your account password) |
 
 ```yaml
 # Public image
 with:
   vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
-  scanTypes: "CONTAINER SCAN"
+  scanTypes: "container"
   containerImage: "nginx:latest"
   containerProvider: "dockerhub"
   containerAuthType: "none"
@@ -278,7 +258,7 @@ with:
 # Private image
 with:
   vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
-  scanTypes: "CONTAINER SCAN"
+  scanTypes: "container"
   containerImage: "myorg/myapp:1.0.0"
   containerProvider: "dockerhub"
   containerAuthType: "username-password"
@@ -288,18 +268,16 @@ with:
 
 #### Amazon ECR (`aws-ecr`)
 
-`containerRegistryType` is always required: `ecr-public` or `ecr-private`. `ecr-private`
-additionally requires `containerRegistryUrl` (the registry host, e.g.
-`123456789012.dkr.ecr.us-east-1.amazonaws.com`) and `containerAuthType: token` with
-`containerToken` set to a short-lived ECR authorization token (e.g. the output of
-`aws ecr get-login-password`, run in an earlier step using an IAM principal with at least
-`ecr:GetAuthorizationToken` and `ecr:BatchGetImage`/`ecr:GetDownloadUrlForLayer` on the
-repository).
+`containerRegistryType`: `ecr-public` or `ecr-private`. `ecr-private` also needs
+`containerRegistryUrl` (e.g. `123456789012.dkr.ecr.us-east-1.amazonaws.com`) and
+`containerAuthType: token` with an ECR authorization token (e.g. from
+`aws ecr get-login-password`) — the IAM principal needs `ecr:GetAuthorizationToken` and
+pull permissions (`ecr:BatchGetImage`, `ecr:GetDownloadUrlForLayer`).
 
 ```yaml
 with:
   vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
-  scanTypes: "CONTAINER SCAN"
+  scanTypes: "container"
   containerImage: "myapp:latest"
   containerProvider: "aws-ecr"
   containerRegistryType: "ecr-private"
@@ -310,14 +288,13 @@ with:
 
 #### GitHub Container Registry — GHCR (`github`)
 
-`containerAuthType: token` with `containerToken` set to a token carrying the `read:packages`
-scope. Either the workflow's own `GITHUB_TOKEN` — in which case the workflow (or job) needs
-`permissions: packages: read` — or a personal access token with `read:packages` works.
+`containerAuthType: token` with a token carrying `read:packages` — either `GITHUB_TOKEN`
+(workflow needs `permissions: packages: read`) or a PAT with `read:packages`.
 
 ```yaml
 with:
   vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
-  scanTypes: "CONTAINER SCAN"
+  scanTypes: "container"
   containerImage: "ghcr.io/myorg/myapp:latest"
   containerProvider: "github"
   containerAuthType: "token"
@@ -326,13 +303,12 @@ with:
 
 #### GitLab Container Registry (`gitlab`)
 
-`containerAuthType: token` with `containerToken` set to a GitLab access token (personal,
-project, group, or deploy token) carrying the `read_registry` scope.
+`containerAuthType: token` with a GitLab token carrying `read_registry`.
 
 ```yaml
 with:
   vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
-  scanTypes: "CONTAINER SCAN"
+  scanTypes: "container"
   containerImage: "registry.gitlab.com/myorg/myapp:latest"
   containerProvider: "gitlab"
   containerAuthType: "token"
@@ -341,16 +317,15 @@ with:
 
 #### Google Container/Artifact Registry (`google`)
 
-`containerRegistryType` is always required: `gcr` (legacy Google Container Registry) or
-`artifact-registry`. `artifact-registry` additionally requires `containerRegistryUrl`.
-`containerAuthType: token` with `containerToken` set to a GCP OAuth access token for a service
+`containerRegistryType`: `gcr` (legacy) or `artifact-registry` (also needs
+`containerRegistryUrl`). `containerAuthType: token` with a GCP access token for a service
 account granted `roles/artifactregistry.reader` (Artifact Registry) or
-`roles/storage.objectViewer` (legacy GCR, which is backed by Cloud Storage).
+`roles/storage.objectViewer` (legacy GCR).
 
 ```yaml
 with:
   vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
-  scanTypes: "CONTAINER SCAN"
+  scanTypes: "container"
   containerImage: "gcr.io/myproject/myapp:latest"
   containerProvider: "google"
   containerRegistryType: "gcr"
@@ -360,17 +335,15 @@ with:
 
 #### Azure Container Registry — ACR (`azure`)
 
-`containerRegistryType` is always required: `mcr` (Microsoft Container Registry — public
-Microsoft-maintained images) or `acr-private`. `acr-private` additionally requires
-`containerRegistryUrl` (e.g. `myregistry.azurecr.io`) and either `containerAuthType: token`
-(an ACR access token, e.g. from `az acr login --expose-token`, which requires the `AcrPull`
-role on the registry) or `containerAuthType: username-password` (an ACR admin-user or service
-principal credential, also needing `AcrPull`).
+`containerRegistryType`: `mcr` (public) or `acr-private` (also needs
+`containerRegistryUrl`, e.g. `myregistry.azurecr.io`). `acr-private` accepts
+`containerAuthType: token` (ACR token, e.g. from `az acr login --expose-token`) or
+`username-password` — both need the `AcrPull` role.
 
 ```yaml
 with:
   vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
-  scanTypes: "CONTAINER SCAN"
+  scanTypes: "container"
   containerImage: "myapp:latest"
   containerProvider: "azure"
   containerRegistryType: "acr-private"
@@ -381,15 +354,13 @@ with:
 
 #### Quay.io (`quay`)
 
-Quay has no unauthenticated option in this action — a Robot Account is required for every
-image, public or private. Use `containerAuthType: token` (Robot Account token) or
-`containerAuthType: username-password` (Robot Account username + token-as-password). The
-Robot Account needs at least **read** permission on the repository being scanned.
+No unauthenticated option — every image needs a Robot Account, via `containerAuthType:
+token` or `username-password`, with at least **read** permission on the repository.
 
 ```yaml
 with:
   vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
-  scanTypes: "CONTAINER SCAN"
+  scanTypes: "container"
   containerImage: "quay.io/myorg/myapp:latest"
   containerProvider: "quay"
   containerAuthType: "token"
@@ -406,7 +377,7 @@ with:
   uses: vigilnz/vigilnz-scan-action@v1
   with:
     vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
-    scanTypes: "SCA,SAST,SECRET SCAN"
+    scanTypes: "sca,sast,secret"
     projectName: "my-application"
     waitForCompletion: true
     timeoutMinutes: 45
@@ -426,18 +397,18 @@ with:
 ```yaml
 with:
   vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
-  scanTypes: "SCA,SAST"
+  scanTypes: "sca,sast"
   waitForCompletion: true
   failOnSeverity: none
   failOnScanError: false
 ```
 
-### Run single scan:
+### Run a single scan:
 
 ```yaml
 with:
   vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
-  scanTypes: "SCA"
+  scanTypes: "sca"
 ```
 
 ### Run all code-based scans:
@@ -445,22 +416,21 @@ with:
 ```yaml
 with:
   vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
-  scanTypes: "SCA,SBOM,SAST,SECRET SCAN,IAC SCAN"
+  scanTypes: "sca,sbom,sast,secret,iac"
   projectName: "my-application"
 ```
 
 ### Run multiple scan types together:
 
-Every scan type listed in `scanTypes` is queued and **runs in parallel on the Vigilnz
-platform, not one after another** — SCA, SAST, DAST and Container scanning here all start at
-the same time. With `waitForCompletion: true`, the action polls all of them concurrently too
-(see [Wait & Gating Inputs](#wait--gating-inputs)), so the total wait is bounded by whichever
-scan type takes the longest, not the sum of every scan type's duration.
+Every scan type in `scanTypes` runs **in parallel on the Vigilnz platform, not one after
+another** — here, SCA, SAST, DAST and Container all start together. With
+`waitForCompletion: true`, the action polls all of them concurrently too, so total wait time
+is bounded by the slowest scan type, not the sum of all of them.
 
 ```yaml
 with:
   vigilnzApiKey: ${{ secrets.VIGILNZ_API_KEY }}
-  scanTypes: "SCA,SAST,DAST,CONTAINER SCAN"
+  scanTypes: "sca,sast,dast,container"
   projectName: "full-stack-app"
   # DAST configuration
   dastScanType: "active"
