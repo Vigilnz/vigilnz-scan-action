@@ -20,7 +20,7 @@ inputs:
   repoAccessToken:
     description: >-
       Fallback access token for resolving this repository's metadata when it is private
-      (e.g. ${{ secrets.GITHUB_TOKEN }} or a PAT with read access). Only used when the
+      (e.g. a GitHub token or a PAT with read access). Only used when the
       Vigilnz account has no GitHub integration connected that already covers this repo;
       never persisted — used only for the single scan request it is sent with.
     required: false
