@@ -51,14 +51,16 @@ describe("buildScanRequest without path scope", () => {
       scanTypes: ["cve", "secret"],
       gitRepoUrl: REPO_URL,
       projectName: "Vigilnz_Backend",
+      source: "github_action",
       branch: "main",
     });
   });
 
-  it("still omits branch and ciContext when they are absent", () => {
+  it("still omits branch and ciContext when they are absent, but always sends source", () => {
     const body = buildScanRequest(baseConfig(), REPO_URL, "", null);
 
-    assert.deepEqual(Object.keys(body).sort(), ["gitRepoUrl", "projectName", "scanTypes"]);
+    assert.deepEqual(Object.keys(body).sort(), ["gitRepoUrl", "projectName", "scanTypes", "source"]);
+    assert.equal(body.source, "github_action");
   });
 
   it("keeps ciContext alongside branch", () => {

@@ -88,6 +88,11 @@ function buildScanRequest(config, repoUrl, branch, ciContext) {
     scanTypes: config.scanTypesInList,
     gitRepoUrl: repoUrl,
     projectName: config.projectName || "",
+    // Creation-origin marker, not a git provider — backend's
+    // resolveActionRequestedSource only honours this exact literal, and only
+    // applies it when the repo row is first created (an existing repo's
+    // stored source/linkage is preserved either way).
+    source: "github_action",
     ...(branch ? { branch } : {}),
     ...(ciContext ? { ciContext } : {}),
     ...(config.repoAccessToken ? { repoAccessToken: config.repoAccessToken } : {}),

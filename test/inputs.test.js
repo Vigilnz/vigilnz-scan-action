@@ -25,7 +25,11 @@ describe("public middleware URL selection", () => {
 
   // No user-configurable override exists — every run talks to one of the
   // three fixed, first-party origins above. getBaseUrl takes only `env`.
-  it("selects the demo origin when one is configured", () => {
-    assert.equal(getBaseUrl("demo"), DEMO_DEFAULT_URL);
+  it("throws for demo while no public demo middleware origin is configured", () => {
+    assert.equal(DEMO_DEFAULT_URL, null);
+    assert.throws(
+      () => getBaseUrl("demo"),
+      /No public middleware URL is configured for the demo environment/
+    );
   });
 });

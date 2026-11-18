@@ -1,7 +1,9 @@
 /**
  * api-client.js
- * Purpose: Thin typed wrapper over the Vigilnz REST endpoints used by the action —
- *          API-key exchange, multi-scan dispatch, scan-status polling and result summary.
+ * Purpose: Thin typed wrapper over the Vigilnz middleware REST endpoints used by the
+ *          action — API-key exchange, multi-scan dispatch, scan-status polling and
+ *          result summary. baseUrl is the middleware's public origin (see constants.js);
+ *          every path below is proxied by the middleware at the same path and method.
  * Author: Vigilnz
  * Date: 2026-08-06
  */

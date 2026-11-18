@@ -4,13 +4,23 @@
  *          polling bounds, terminal scan statuses and severity ordering.
  * Author: Vigilnz
  * Date: 2026-08-06
+ * Modified: 2026-11-18 — point every environment at the middleware's public origin
+ *   instead of the backend. Every endpoint this action calls (/auth/api-key,
+ *   /scan-targets/multi-scan, /chat/scan-status/:targetId,
+ *   /scan-results/by-scan-id/:scanId) is proxied 1:1 by the middleware at the
+ *   same path/method, so only these base URLs change — see DEPLOYMENT.md
+ *   ("Client overrides must point to middleware, not the backend api_url").
  */
 
 "use strict";
 
-const DEV_DEFAULT_URL = "https://devapi.vigilnz.com";
-const DEMO_DEFAULT_URL = "https://demoapi.vigilnz.com";
-const PROD_DEFAULT_URL = "https://api.vigilnz.com";
+// devmiddleware.vigilnz.com exists in source config but DEPLOYMENT.md flags its
+// DNS/ingress as unverified — confirm it resolves before relying on dev scans.
+const DEV_DEFAULT_URL = "https://devmiddleware.vigilnz.com";
+// No demo middleware origin is configured yet (DEPLOYMENT.md); getBaseUrl's
+// demo branch below throws until one exists.
+const DEMO_DEFAULT_URL = null;
+const PROD_DEFAULT_URL = "https://middleware.vigilnz.com";
 
 const MS_PER_SECOND = 1000;
 const SECONDS_PER_MINUTE = 60;
